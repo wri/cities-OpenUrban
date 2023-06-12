@@ -1,4 +1,5 @@
 # Data mockup for SSC LULC layer creation---Los Angeles, CA
+# updates
 
 library(here)
 library(tidyverse)
