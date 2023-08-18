@@ -71,15 +71,12 @@ FROM = c(0, 10, 20, 30, 40, 50, 60, 80, 70, 90, 95, 100)
 ## [ND, Green, Green, Green, Green, Built up, Barren, Water, Water, Water, Water, Barren]
 TO = c(0, 1, 1, 1, 1, 2, 3, 4, 4, 4, 4, 3)
 
-esa_city_rm = esa_city$remap(FROM, TO)
+esa_city = esa_city$remap(FROM, TO)
 
 # Resample raster from 10-m to 1-m
 # GEE performs nearest neighbor resampling by default
 # https://developers.google.com/earth-engine/guides/resample
-esa_1m = esa_city$reproject(crs = paste0("EPSG:", epsg), scale = 1)
-
-# Map$addLayer(
-#   eeObject = esa_1m)
+esa_city = esa_city$reproject(crs = paste0("EPSG:", epsg), scale = 1)
 
 # Create city folder to store data
 path <- paste0("data/", city_name)
@@ -91,9 +88,8 @@ if (!dir.exists(path)){
 }
 
 # Download from Google Drive to city folder
-esa_img <- ee_as_rast(esa_1m,
+esa_img <- ee_as_rast(esa_city,
                       region = bb_ee,
-                      dsn = "ESA_1m",
                       via = "drive",
                       scale = 1,
                       maxPixels = 10e10,
@@ -137,11 +133,64 @@ open_space_rast <- open_space %>%
 
 # Roads -------------------------------------------------------------------
 
+## Get data ----------------------------------------------------------------
+
 # get roads from OSM
 roads <- opq(bb) %>% 
   add_osm_feature(key = 'highway',
-                  value = c('motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'residential', 'unclassified', 'motorway_link', 
-                            'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link', 'living_street')) %>% 
+                  value = c('motorway', 'trunk', 'primary', 'secondary', 
+                            'tertiary', 'residential', 'unclassified', 
+                            'motorway_link', 'trunk_link', 'primary_link', 
+                            'secondary_link', 'tertiary_link', 'living_street')) %>% 
   osmdata_sf() 
+
+# select lines geometries
+roads <- roads$osm_lines %>% 
+  dplyr::select(highway, lanes) %>% 
+  mutate(lanes = as.numeric(lanes))
+
+
+## Tidy --------------------------------------------------------------------
+
+# Get the avg number of lanes per highway class
+lanes <- roads %>% 
+  st_drop_geometry() %>% 
+  group_by(highway) %>% 
+  summarize(avg.lanes = ceiling(mean(lanes, na.rm = TRUE)))
+
+# Fill lanes with avg lane value when missing
+roads <- roads %>% 
+  left_join(lanes, by = "highway") %>% 
+  mutate(lanes = coalesce(lanes, avg.lanes))
+
+# Add value field (20)
+roads <- roads %>% 
+  mutate(Value = 20)
+
+# Reproject to local state plane 
+roads <- roads %>% 
+  st_transform(epsg) 
+
+
+## Buffer ------------------------------------------------------------------
+
+# Buffer roads by lanes * 10 ft (3.048 m) 
+# https://nacto.org/publication/urban-street-design-guide/street-design-elements/lane-width/#:~:text=wider%20lane%20widths.-,Lane%20widths%20of%2010%20feet%20are%20appropriate%20in%20urban%20areas,be%20used%20in%20each%20direction
+# cap is flat to the terminus of the road
+# join style is mitred so intersections are squared
+roads <- roads %>% 
+  st_buffer(dist = roads$lanes * 3.048,
+            endCapStyle = "FLAT",
+            joinStyle = "MITRE")
+
+
+## Rasterize ---------------------------------------------------------------
+
+# Rasterize to match grid of esa and save raster
+roads_rast <- roads %>% 
+  rasterize(esa, 
+            field = "Value",
+            filename = paste0(path, "/roads_1m.tif"))
+
 
 
