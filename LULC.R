@@ -99,6 +99,8 @@ esa <- esa_img %>%
   ee_utils_future_value() %>% 
   writeRaster(paste0(path, "/ESA_1m.tif"))
 
+esa <- rast(here(path, "ESA_1m.tif"))
+
 # Open space --------------------------------------------------------------
 
 # get open space from OSM
@@ -127,11 +129,16 @@ open_space <- open_space %>%
   st_transform(epsg) %>% 
   mutate(Value = 10)
 
+
+## Rasterize ---------------------------------------------------------------
+
 # Rasterize to match grid of esa and save raster
 open_space_rast <- open_space %>% 
   rasterize(esa, 
             field = "Value",
-            filename = paste0(path, "/open_space_1m.tif"))
+            background = 0,
+            filename = paste0(path, "/open_space_1m.tif"),
+            overwrite = TRUE)
 
 rm(open_space)
 
@@ -195,7 +202,9 @@ roads <- roads %>%
 roads_rast <- roads %>% 
   rasterize(esa, 
             field = "Value",
-            filename = paste0(path, "/roads_1m.tif"))
+            background = 0, 
+            filename = paste0(path, "/roads_1m.tif"),
+            overwrite = TRUE)
 
 rm(roads)
 
@@ -234,26 +243,13 @@ water <- water %>%
 water_rast <- water %>% 
   rasterize(esa, 
             field = "Value",
-            filename = paste0(path, "/water_1m.tif"))
+            background = 0,
+            filename = paste0(path, "/water_1m.tif"),
+            overwrite = TRUE)
 
 rm(water)
 
 # Roofs -------------------------------------------------------------------
-
-## Get data --------------------------------------------------------------
-
-# get water from OSM
-buildings <- opq(bb) %>% 
-  add_osm_feature(key = 'building') %>% 
-  osmdata_sf() 
-
-# Combine polygons and multipolygons
-buildings <- buildings$osm_polygons %>% 
-  bind_rows(st_cast(buildings$osm_multipolygons, "POLYGON"))
-
-# drop excess fields
-buildings <- buildings %>% 
-  select(osm_id)
 
 ## Get ULU data ---------------------------------------------------
 
@@ -279,13 +275,10 @@ ulu <- ee$ImageCollection('projects/wri-datalab/cities/urban_land_use/V1')$
 # 7-Roads
 FROM = c(0, 1, 2, 3, 4, 5, 6, 7)
 
-# 0-NA
-# 1-Open space
-# 2-Non-residential
-# 3-Residential
-# 0-Roads, assign to zero because if a building is classified as roads it will
-#    be assigned a different value
-TO = c(0, 1, 2, 3, 3, 3, 3, 0)
+# 0-NA: 0, 7 (roads)
+# 1-Non-residential: 1 (open space), 2 (non-res)
+# 2-Residential: 3 (Atomistic), 4 (Informal), 5 (Formal), 6 (Housing project)
+TO = c(0, 1, 1, 3, 3, 3, 3, 0)
 
 ulu = ulu$remap(FROM, TO)
 
@@ -299,9 +292,25 @@ ulu_img <- ee_as_rast(ulu,
 
 ulu <- ulu_img %>% 
   ee_utils_future_value() %>% 
-  writeRaster(paste0(path, "/ULU_5m.tif"))
+  writeRaster(paste0(path, "/ULU_5m.tif"),
+              overwrite = TRUE)
 
-#ulu <- rast("data/Los_Angeles/ULU_5m.tif")
+# ulu <- rast("data/Los_Angeles/ULU_5m.tif")
+
+## Get data --------------------------------------------------------------
+
+# get water from OSM
+buildings <- opq(bb) %>% 
+  add_osm_feature(key = 'building') %>% 
+  osmdata_sf() 
+
+# Combine polygons and multipolygons
+buildings <- buildings$osm_polygons %>% 
+  bind_rows(st_cast(buildings$osm_multipolygons, "POLYGON"))
+
+# drop excess fields
+buildings <- buildings %>% 
+  select(osm_id)
 
 ## Extract ULU to buildings ------------------------------------------------
 
@@ -312,12 +321,12 @@ buildings <- buildings %>%
 # Extract values to buildings using exact_extract, as coverage fractions
 # https://github.com/isciences/exactextractr
 build_ulu <- exactextractr::exact_extract(ulu, buildings, 'frac') %>% 
-  bind_cols(buildings_proj)
+  bind_cols(buildings)
 
 # Assign the max coverage class to the building
 # If there is no max class, assign non-residential
 build_ulu <- build_ulu %>% 
-  st_drop_geometry() %>% 
+  select(! geometry) %>% 
   pivot_longer(cols = starts_with("frac"), 
                names_to = "ULU", 
                values_to = "coverage") %>% 
@@ -330,7 +339,7 @@ build_ulu <- build_ulu %>%
                          ULU == 0 ~ 2),
          ULU = as_factor(ULU)) %>% 
   select(!coverage) %>% 
-  ungroup()
+  ungroup() 
 
 buildings <- buildings %>% 
   left_join(build_ulu, by = "osm_id")
@@ -357,7 +366,9 @@ anbh_img <- ee_as_rast(anbh,
 
 anbh <- anbh_img %>% 
   ee_utils_future_value() %>% 
-  writeRaster(paste0(path, "/anbh.tif"))
+  writeRaster(here(path, "anbh.tif"))
+
+anbh <- rast(here(path, "anbh.tif"))
 
 # Reproject buildings to match ULU
 buildings <- buildings %>% 
@@ -378,21 +389,30 @@ buildings <- buildings %>%
   st_transform(epsg) %>% 
   mutate(Area_m = st_area(.))
 
-######## Fix classificaiton of ULU
-buidlings2 <- buildings %>% 
-  mutate(ULU = case_when(ULU == 1 ~ 2,
-                         ULU == 3 ~ 5),
-         ULU = as_factor(ULU))
-
-
-
 ## Classification of roof slope --------------------------------------------
 tree <- readRDS(here("data", "tree.rds"))
 
 test <- predict(tree, newdata = buidlings2, type = "class")
 
 buildings <- buildings %>% 
-  bind_cols(roof_slope = test)
+  bind_cols(roof_slope = test) 
+
+# add value field, low slope = 41, high slope = 42
+buildings <- buildings %>% 
+  mutate(Value = case_when(roof_slope == "low" ~ 41,
+                           roof_slope == "high" ~ 42))
+
+
+## Rasterize ---------------------------------------------------------------
+
+# Rasterize to match grid of esa and save raster
+buildings_rast <- buildings %>% 
+  rasterize(esa, 
+            field = "Value",
+            filename = paste0(path, "/buildings_1m.tif"))
+
+#rm(buildings)
+
 
 # Parking -----------------------------------------------------------------
 
@@ -421,6 +441,14 @@ rm(parking)
 
 # Combine rasters ---------------------------------------------------------
 
+LULC <- sds(esa,
+          open_space_rast,
+          roads_rast,
+          water_rast,
+          buildings_rast,
+          parking_rast)
 
+LULC2 <- app(LULC, max)
 
+writeRaster(LULC2, paste0(path, "/LULC_1m.tif"), overwrite = TRUE)
 
