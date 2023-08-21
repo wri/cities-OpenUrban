@@ -193,4 +193,48 @@ roads_rast <- roads %>%
             filename = paste0(path, "/roads_1m.tif"))
 
 
+# Water -------------------------------------------------------------------
+
+## Get data --------------------------------------------------------------
+
+# get water from OSM
+water1 <- opq(bb) %>% 
+  add_osm_feature(key = 'water') %>% 
+  osmdata_sf() 
+
+water2 <- opq(bb) %>% 
+  add_osm_feature(key = 'natural', value = 'water') %>% 
+  osmdata_sf() 
+
+water <- c(water1, water2)
+
+# Combine polygons and multipolygons
+water <- water$osm_polygons %>% 
+  bind_rows(st_cast(water$osm_multipolygons, "POLYGON"))
+
+## Tidy ---------------------------------------------------------------
+
+# Reproject to local state plane and add value field (10)
+water <- water %>% 
+  st_transform(epsg) %>% 
+  mutate(Value = 30)
+
+## Rasterize ---------------------------------------------------------------
+
+# Rasterize to match grid of esa and save raster
+water_rast <- water %>% 
+  rasterize(esa, 
+            field = "Value",
+            filename = paste0(path, "/water_1m.tif"))
+
+
+# Roofs -------------------------------------------------------------------
+
+## Get data --------------------------------------------------------------
+
+# get water from OSM
+buildings <- opq(bb) %>% 
+  add_osm_feature(key = 'building') %>% 
+  osmdata_sf() 
+
 
