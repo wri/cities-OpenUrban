@@ -319,15 +319,16 @@ build_ulu <- exactextractr::exact_extract(ulu, buildings, 'frac') %>%
 build_ulu <- build_ulu %>% 
   st_drop_geometry() %>% 
   pivot_longer(cols = starts_with("frac"), 
-               names_to = "ulu", 
+               names_to = "ULU", 
                values_to = "coverage") %>% 
-  mutate(ulu = as.integer(str_sub(ulu, start = -1))) %>% 
+  mutate(ULU = as.integer(str_sub(ULU, start = -1))) %>% 
   group_by(osm_id) %>% 
   # keep max class
   filter(coverage == max(coverage)) %>% 
   # if max class is 0, assign to non-residential (class 2)
-  mutate(ulu = case_when(ulu != 0 ~ ulu,
-                         ulu == 0 ~ 2)) %>% 
+  mutate(ULU = case_when(ULU != 0 ~ ULU,
+                         ULU == 0 ~ 2),
+         ULU = as_factor(ULU)) %>% 
   select(!coverage) %>% 
   ungroup()
 
@@ -377,9 +378,21 @@ buildings <- buildings %>%
   st_transform(epsg) %>% 
   mutate(Area_m = st_area(.))
 
+######## Fix classificaiton of ULU
+buidlings2 <- buildings %>% 
+  mutate(ULU = case_when(ULU == 1 ~ 2,
+                         ULU == 3 ~ 5),
+         ULU = as_factor(ULU))
 
-# Classification of roof slope --------------------------------------------
 
+
+## Classification of roof slope --------------------------------------------
+tree <- readRDS(here("data", "tree.rds"))
+
+test <- predict(tree, newdata = buidlings2, type = "class")
+
+buildings <- buildings %>% 
+  bind_cols(roof_slope = test)
 
 # Parking -----------------------------------------------------------------
 
@@ -405,4 +418,9 @@ parking_rast <- parking %>%
             filename = paste0(path, "/parking_1m.tif"))
 
 rm(parking)
+
+# Combine rasters ---------------------------------------------------------
+
+
+
 
