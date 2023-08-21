@@ -115,6 +115,9 @@ open_space2 <- opq(bb) %>%
 
 open_space <- c(open_space1, open_space2)
 
+rm(open_space1)
+rm(open_space2)
+
 # Combine polygons and multipolygons
 open_space <- open_space$osm_polygons %>% 
   bind_rows(st_cast(open_space$osm_multipolygons, "POLYGON")) 
@@ -129,6 +132,8 @@ open_space_rast <- open_space %>%
   rasterize(esa, 
             field = "Value",
             filename = paste0(path, "/open_space_1m.tif"))
+
+rm(open_space)
 
 
 # Roads -------------------------------------------------------------------
@@ -192,6 +197,7 @@ roads_rast <- roads %>%
             field = "Value",
             filename = paste0(path, "/roads_1m.tif"))
 
+rm(roads)
 
 # Water -------------------------------------------------------------------
 
@@ -207,6 +213,9 @@ water2 <- opq(bb) %>%
   osmdata_sf() 
 
 water <- c(water1, water2)
+
+rm(water1)
+rm(water2)
 
 # Combine polygons and multipolygons
 water <- water$osm_polygons %>% 
@@ -227,6 +236,7 @@ water_rast <- water %>%
             field = "Value",
             filename = paste0(path, "/water_1m.tif"))
 
+rm(water)
 
 # Roofs -------------------------------------------------------------------
 
@@ -236,5 +246,90 @@ water_rast <- water %>%
 buildings <- opq(bb) %>% 
   add_osm_feature(key = 'building') %>% 
   osmdata_sf() 
+
+# Combine polygons and multipolygons
+buildings <- buildings$osm_polygons %>% 
+  bind_rows(st_cast(buildings$osm_multipolygons, "POLYGON"))
+
+# drop excess fields
+buildings <- buildings %>% 
+  select(osm_id)
+
+## Get ULU data ---------------------------------------------------
+
+############# Check that first is okay here
+# firstNonNull is used as reducer in GEE script
+# Read ULU land cover, filter to city, select lulc band
+ulu <- ee$ImageCollection('projects/wri-datalab/cities/urban_land_use/V1')$ 
+  filterBounds(bb_ee)$ 
+  select('lulc')$
+  first()
+
+##############
+# Revisit class definitions
+##############
+# Reclassify raster to combine lulc types
+# 0-NA 
+# 1-Open space 
+# 2-Non-residential 
+# 3-Atomistic 
+# 4-Informal subdivision 
+# 5-Formal subdivision 
+# 6-Housing project
+# 7-Roads
+FROM = c(0, 1, 2, 3, 4, 5, 6, 7)
+
+# 0-NA
+# 1-Open space
+# 2-Non-residential
+# 3-Residential
+# 0-Roads, assign to zero because if a building is classified as roads it will
+#    be assigned a different value
+TO = c(0, 1, 2, 3, 3, 3, 3, 0)
+
+ulu = ulu$remap(FROM, TO)
+
+# Download from Google Drive to city folder
+ulu_img <- ee_as_rast(ulu,
+                      region = bb_ee,
+                      via = "drive",
+                      scale = 5,
+                      maxPixels = 10e10,
+                      lazy = TRUE) 
+
+ulu <- ulu_img %>% 
+  ee_utils_future_value() %>% 
+  writeRaster(paste0(path, "/ULU_5m.tif"))
+
+#ulu <- rast("data/Los_Angeles/ULU_5m.tif")
+
+## Extract ULU to buildings ------------------------------------------------
+
+# Reproject buildings to match ULU
+buildings_proj <- buildings %>% 
+  st_transform(crs = st_crs(ulu))
+
+# Extract values to buildings using exact_extract, as coverage fractions
+buildings_proj3 <- exactextractr::exact_extract(ulu, buildings_proj, 'frac') %>% 
+  bind_cols(buildings_proj)
+
+# Assign the max coverage class to the building
+# If there is no max class, assign non-residential
+buildings_proj4 <- buildings_proj3 %>% 
+  pivot_longer(cols = starts_with("frac"), 
+               names_to = "ulu", 
+               values_to = "coverage") %>% 
+  mutate(class = as.integer(str_sub(ulu, start = -1))) %>% 
+  group_by(osm_id) %>% 
+  # keep max class
+  filter(coverage == max(coverage)) %>% 
+  # if max class is 0, assign to non-residential (class 2)
+  mutate(ulu = case_when(ulu != 0 ~ ulu,
+                         ulu == 0 ~ 2)) %>% 
+  select(!coverage)
+
+
+# Average building height from the global human settlement layer ----------
+
 
 
