@@ -390,19 +390,19 @@ parking <- opq(bb) %>%
   osmdata_sf() 
 
 # Combine polygons and multipolygons
-open_space <- open_space$osm_polygons %>% 
-  bind_rows(st_cast(open_space$osm_multipolygons, "POLYGON")) 
+parking <- parking$osm_polygons %>% 
+  bind_rows(st_cast(parking$osm_multipolygons, "POLYGON")) 
 
-# Reproject to local state plane and add value field (10)
-open_space <- open_space %>% 
+# Reproject to local state plane and add value field (50)
+parking <- parking %>% 
   st_transform(epsg) %>% 
-  mutate(Value = 10)
+  mutate(Value = 50)
 
 # Rasterize to match grid of esa and save raster
-open_space_rast <- open_space %>% 
+parking_rast <- parking %>% 
   rasterize(esa, 
             field = "Value",
-            filename = paste0(path, "/open_space_1m.tif"))
+            filename = paste0(path, "/parking_1m.tif"))
 
-rm(open_space)
+rm(parking)
 
