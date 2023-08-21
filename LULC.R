@@ -265,7 +265,7 @@ ulu <- ee$ImageCollection('projects/wri-datalab/cities/urban_land_use/V1')$
   select('lulc')$
   first()
 
-##############
+############## 
 # Revisit class definitions
 ##############
 # Reclassify raster to combine lulc types
@@ -306,30 +306,103 @@ ulu <- ulu_img %>%
 ## Extract ULU to buildings ------------------------------------------------
 
 # Reproject buildings to match ULU
-buildings_proj <- buildings %>% 
+buildings <- buildings %>% 
   st_transform(crs = st_crs(ulu))
 
 # Extract values to buildings using exact_extract, as coverage fractions
-buildings_proj3 <- exactextractr::exact_extract(ulu, buildings_proj, 'frac') %>% 
+# https://github.com/isciences/exactextractr
+build_ulu <- exactextractr::exact_extract(ulu, buildings, 'frac') %>% 
   bind_cols(buildings_proj)
 
 # Assign the max coverage class to the building
 # If there is no max class, assign non-residential
-buildings_proj4 <- buildings_proj3 %>% 
+build_ulu <- build_ulu %>% 
+  st_drop_geometry() %>% 
   pivot_longer(cols = starts_with("frac"), 
                names_to = "ulu", 
                values_to = "coverage") %>% 
-  mutate(class = as.integer(str_sub(ulu, start = -1))) %>% 
+  mutate(ulu = as.integer(str_sub(ulu, start = -1))) %>% 
   group_by(osm_id) %>% 
   # keep max class
   filter(coverage == max(coverage)) %>% 
   # if max class is 0, assign to non-residential (class 2)
   mutate(ulu = case_when(ulu != 0 ~ ulu,
                          ulu == 0 ~ 2)) %>% 
-  select(!coverage)
+  select(!coverage) %>% 
+  ungroup()
+
+buildings <- buildings %>% 
+  left_join(build_ulu, by = "osm_id")
 
 
-# Average building height from the global human settlement layer ----------
+## Average building height from the global human settlement layer ----------
+
+# ANBH is the average height of the built surfaces, USE THIS
+# AGBH is the amount of built cubic meters per surface unit in the cell
+# https://ghsl.jrc.ec.europa.eu/ghs_buH2023.php
+
+anbh <- ee$ImageCollection("JRC/GHSL/P2023A/GHS_BUILT_H")$
+  filterBounds(bb_ee)$ 
+  select('built_height')$
+  first()
+
+# Download from Google Drive to city folder
+anbh_img <- ee_as_rast(anbh,
+                      region = bb_ee,
+                      via = "drive",
+                      scale = 100,
+                      maxPixels = 10e10,
+                      lazy = TRUE) 
+
+anbh <- anbh_img %>% 
+  ee_utils_future_value() %>% 
+  writeRaster(paste0(path, "/anbh.tif"))
+
+# Reproject buildings to match ULU
+buildings <- buildings %>% 
+  st_transform(crs = st_crs(anbh))
+
+# Extract average of pixel values to buildings
+# Mean value of cells that intersect the polygon, 
+# weighted by the fraction of the cell that is covered.
+avg_ht <- exactextractr::exact_extract(anbh, buildings, 'mean')
+
+buildings <- buildings %>% 
+  add_column(ANBH = avg_ht)
+
+## Tidy ---------------------------------------------------------------
+
+# Reproject to local state plane and calculate area
+buildings <- buildings %>% 
+  st_transform(epsg) %>% 
+  mutate(Area_m = st_area(.))
 
 
+# Classification of roof slope --------------------------------------------
+
+
+# Parking -----------------------------------------------------------------
+
+# get open space from OSM
+parking <- opq(bb) %>% 
+  add_osm_feature(key = 'amenity',
+                  value = 'parking') %>% 
+  osmdata_sf() 
+
+# Combine polygons and multipolygons
+open_space <- open_space$osm_polygons %>% 
+  bind_rows(st_cast(open_space$osm_multipolygons, "POLYGON")) 
+
+# Reproject to local state plane and add value field (10)
+open_space <- open_space %>% 
+  st_transform(epsg) %>% 
+  mutate(Value = 10)
+
+# Rasterize to match grid of esa and save raster
+open_space_rast <- open_space %>% 
+  rasterize(esa, 
+            field = "Value",
+            filename = paste0(path, "/open_space_1m.tif"))
+
+rm(open_space)
 
