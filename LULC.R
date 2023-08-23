@@ -145,7 +145,7 @@ rm(open_space)
 
 # Roads -------------------------------------------------------------------
 
-## Get data ----------------------------------------------------------------
+## Get OSM roads data ----------------------------------------------------------------
 
 # get roads from OSM
 roads <- opq(bb) %>% 
@@ -210,7 +210,7 @@ rm(roads)
 
 # Water -------------------------------------------------------------------
 
-## Get data --------------------------------------------------------------
+## Get OSM water data --------------------------------------------------------------
 
 # get water from OSM
 water1 <- opq(bb) %>% 
@@ -257,28 +257,46 @@ rm(water)
 # firstNonNull is used as reducer in GEE script
 # Read ULU land cover, filter to city, select lulc band
 ulu <- ee$ImageCollection('projects/wri-datalab/cities/urban_land_use/V1')$ 
-  filterBounds(bb_ee)$ 
+  filterBounds(bb_ee)$
   select('lulc')$
-  first()
+  first()$
+  rename('lulc')
+
+roads <- ee$ImageCollection('projects/wri-datalab/cities/urban_land_use/V1')$ 
+  filterBounds(bb_ee)$
+  select('road')$
+  first()$
+  rename('lulc')
+  
+# Create road mask
+# Typical threshold for creating road mask
+road_prob <- 50
+road_mask <- roads$
+  updateMask(roads$gte(road_prob))$
+  where(roads, 1)
+
+ulu <- ulu$
+  where(road_mask, 6)
 
 ############## 
 # Revisit class definitions
 ##############
 # Reclassify raster to combine lulc types
-# 0-NA 
-# 1-Open space 
-# 2-Non-residential 
-# 3-Atomistic 
-# 4-Informal subdivision 
-# 5-Formal subdivision 
-# 6-Housing project
-# 7-Roads
-FROM = c(0, 1, 2, 3, 4, 5, 6, 7)
+# 0-Open space 
+# 1-Non-residential 
+# 2-Atomistic 
+# 3-Informal subdivision 
+# 4-Formal subdivision
+# 5-Housing project 
+# 6-Roads
 
-# 0-NA: 0, 7 (roads)
-# 1-Non-residential: 1 (open space), 2 (non-res)
-# 2-Residential: 3 (Atomistic), 4 (Informal), 5 (Formal), 6 (Housing project)
-TO = c(0, 1, 1, 3, 3, 3, 3, 0)
+FROM = c(0, 1, 2, 3, 4, 5, 6)
+
+# 1-Non-residential: 0 (open space), 1 (non-res)
+# 2-Residential: 2 (Atomistic), 3 (Informal), 4 (Formal), 5 (Housing project)
+# 3-Roads: 6 (Roads)
+
+TO = c(1, 1, 2, 2, 2, 2, 3)
 
 ulu = ulu$remap(FROM, TO)
 
@@ -295,11 +313,13 @@ ulu <- ulu_img %>%
   writeRaster(paste0(path, "/ULU_5m.tif"),
               overwrite = TRUE)
 
+rm(ulu_img)
+
 # ulu <- rast("data/Los_Angeles/ULU_5m.tif")
 
-## Get data --------------------------------------------------------------
+## Get OSM buildings data --------------------------------------------------------------
 
-# get water from OSM
+# get buildings from OSM
 buildings <- opq(bb) %>% 
   add_osm_feature(key = 'building') %>% 
   osmdata_sf() 
@@ -320,18 +340,21 @@ buildings <- buildings %>%
 
 # Extract values to buildings using exact_extract, as coverage fractions
 # https://github.com/isciences/exactextractr
-build_ulu <- exactextractr::exact_extract(ulu, buildings, 'frac') %>% 
-  bind_cols(buildings)
+build_ulu <- exactextractr::exact_extract(ulu, buildings, 'frac') 
 
-# Assign the max coverage class to the building
-# If there is no max class, assign non-residential
-build_ulu <- build_ulu %>% 
-  select(! geometry) %>% 
+# Assign the max coverage class to the building if it is not roads,
+# If the max class is roads assign the minority class
+# If the max class is roads, and there is no minority class, assign non-residential
+build_ulu2 <- build_ulu %>% 
+  mutate(ID = row_number()) %>% 
   pivot_longer(cols = starts_with("frac"), 
                names_to = "ULU", 
                values_to = "coverage") %>% 
   mutate(ULU = as.integer(str_sub(ULU, start = -1))) %>% 
-  group_by(osm_id) %>% 
+  group_by(ID) %>% 
+  summarise(ULU = case_when(ULU == 0, ))
+  
+  
   # keep max class
   filter(coverage == max(coverage)) %>% 
   # if max class is 0, assign to non-residential (class 2)
@@ -351,9 +374,9 @@ buildings <- buildings %>%
 # AGBH is the amount of built cubic meters per surface unit in the cell
 # https://ghsl.jrc.ec.europa.eu/ghs_buH2023.php
 
-anbh <- ee$ImageCollection("JRC/GHSL/P2023A/GHS_BUILT_H")$
+anbh <- ee$ImageCollection("projects/wri-datalab/GHSL/GHS-BUILT-H-ANBH_R2023A")$
   filterBounds(bb_ee)$ 
-  select('built_height')$
+  select('b1')$
   first()
 
 # Download from Google Drive to city folder
@@ -366,11 +389,12 @@ anbh_img <- ee_as_rast(anbh,
 
 anbh <- anbh_img %>% 
   ee_utils_future_value() %>% 
-  writeRaster(here(path, "anbh.tif"))
+  writeRaster(here(path, "anbh.tif"),
+              overwrite = TRUE)
 
-anbh <- rast(here(path, "anbh.tif"))
+#anbh <- rast(here(path, "anbh.tif"))
 
-# Reproject buildings to match ULU
+# Reproject buildings to match ANBH
 buildings <- buildings %>% 
   st_transform(crs = st_crs(anbh))
 
@@ -388,6 +412,7 @@ buildings <- buildings %>%
 buildings <- buildings %>% 
   st_transform(epsg) %>% 
   mutate(Area_m = st_area(.))
+
 
 ## Classification of roof slope --------------------------------------------
 tree <- readRDS(here("data", "tree.rds"))
