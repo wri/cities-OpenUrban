@@ -68,7 +68,11 @@ esa_city <- esa_city$first()
 ##  Snow/ice, Permanent water bodies, Herbaceous wetland, Mangroves, Moss and lichen]
 FROM = c(0, 10, 20, 30, 40, 50, 60, 80, 70, 90, 95, 100)
 
-## [ND, Green, Green, Green, Green, Built up, Barren, Water, Water, Water, Water, Barren]
+# ND: 0 
+# Green: 1 (Tree, Shrubland, Grassland, Cropland)
+# Built up: 2 (Built up)
+# Barren: 3 (Bare/sparse vegetation, Moss and lichen)
+# Water: 4 (Snow/ice, Permanent water bodies, Herbaceous wetland, Mangroves)
 TO = c(0, 1, 1, 1, 1, 2, 3, 4, 4, 4, 4, 3)
 
 esa_city = esa_city$remap(FROM, TO)
@@ -95,15 +99,16 @@ esa_img <- ee_as_rast(esa_city,
                       maxPixels = 10e10,
                       lazy = TRUE) 
 
-esa <- esa_img %>% 
+esa_rast <- esa_img %>% 
   ee_utils_future_value() %>% 
   writeRaster(paste0(path, "/ESA_1m.tif"))
 
-esa <- rast(here(path, "ESA_1m.tif"))
+# esa_rast <- rast(here(path, "ESA_1m.tif"))
 
 # Open space --------------------------------------------------------------
 
-# get open space from OSM
+## Get OSM open space data -------------------------------------------------
+
 open_space1 <- opq(bb) %>% 
   add_osm_feature(key = 'leisure',
                   value = c('park', 'nature_reserve', 'common', 
@@ -119,6 +124,8 @@ open_space <- c(open_space1, open_space2)
 
 rm(open_space1)
 rm(open_space2)
+
+## Tidy --------------------------------------------------------------------
 
 # Combine polygons and multipolygons
 open_space <- open_space$osm_polygons %>% 
@@ -141,6 +148,8 @@ open_space_rast <- open_space %>%
             overwrite = TRUE)
 
 rm(open_space)
+
+# open_space_rast <- rast(here(path, "open_space_1m.tif"))
 
 
 # Roads -------------------------------------------------------------------
@@ -208,6 +217,8 @@ roads_rast <- roads %>%
 
 rm(roads)
 
+# roads_rast <- rast(here(path, "roads_1m.tif"))
+
 # Water -------------------------------------------------------------------
 
 ## Get OSM water data --------------------------------------------------------------
@@ -249,7 +260,9 @@ water_rast <- water %>%
 
 rm(water)
 
-# Roofs -------------------------------------------------------------------
+# water_rast <- rast(here(path, "water_1m.tif"))
+
+# Buildings -------------------------------------------------------------------
 
 ## Get ULU data ---------------------------------------------------
 
@@ -278,9 +291,6 @@ road_mask <- roads$
 ulu <- ulu$
   where(road_mask, 6)
 
-############## 
-# Revisit class definitions
-##############
 # Reclassify raster to combine lulc types
 # 0-Open space 
 # 1-Non-residential 
@@ -315,7 +325,7 @@ ulu <- ulu_img %>%
 
 rm(ulu_img)
 
-# ulu <- rast("data/Los_Angeles/ULU_5m.tif")
+# ulu <- rast(here(path, "ULU_5m.tif"))
 
 ## Get OSM buildings data --------------------------------------------------------------
 
@@ -345,27 +355,25 @@ build_ulu <- exactextractr::exact_extract(ulu, buildings, 'frac')
 # Assign the max coverage class to the building if it is not roads,
 # If the max class is roads assign the minority class
 # If the max class is roads, and there is no minority class, assign non-residential
-build_ulu2 <- build_ulu %>% 
+build_ulu <- build_ulu %>% 
   mutate(ID = row_number()) %>% 
   pivot_longer(cols = starts_with("frac"), 
                names_to = "ULU", 
                values_to = "coverage") %>% 
   mutate(ULU = as.integer(str_sub(ULU, start = -1))) %>% 
   group_by(ID) %>% 
-  summarise(ULU = case_when(ULU == 0, ))
-  
-  
-  # keep max class
-  filter(coverage == max(coverage)) %>% 
-  # if max class is 0, assign to non-residential (class 2)
-  mutate(ULU = case_when(ULU != 0 ~ ULU,
-                         ULU == 0 ~ 2),
-         ULU = as_factor(ULU)) %>% 
-  select(!coverage) %>% 
+  arrange(coverage, .by_group = TRUE) %>% 
+  summarise(ULU = case_when(
+    # When the majority class is not roads (3), return the majority class
+    last(ULU) != 3 ~ last(ULU),
+    # When the majority class is roads, return the second majority class
+    last(ULU) == 3 & nth(coverage, -2L) != 0 ~ nth(ULU, -2L),
+    # When the majority ULU is roads (3) & there is no minority class, use ULU 1 (non-res)
+    last(ULU) == 3 & nth(coverage, -2L) == 0 ~ 1)) %>% 
   ungroup() 
 
 buildings <- buildings %>% 
-  left_join(build_ulu, by = "osm_id")
+  add_column(ULU = build_ulu$ULU)
 
 
 ## Average building height from the global human settlement layer ----------
@@ -392,7 +400,7 @@ anbh <- anbh_img %>%
   writeRaster(here(path, "anbh.tif"),
               overwrite = TRUE)
 
-#anbh <- rast(here(path, "anbh.tif"))
+# anbh <- rast(here(path, "anbh.tif"))
 
 # Reproject buildings to match ANBH
 buildings <- buildings %>% 
@@ -411,21 +419,21 @@ buildings <- buildings %>%
 # Reproject to local state plane and calculate area
 buildings <- buildings %>% 
   st_transform(epsg) %>% 
-  mutate(Area_m = st_area(.))
+  mutate(Area_m = as.numeric(st_area(.)))
 
 
 ## Classification of roof slope --------------------------------------------
 tree <- readRDS(here("data", "tree.rds"))
 
-test <- predict(tree, newdata = buidlings2, type = "class")
+pred <- predict(tree, newdata = buildings, type = "class")
 
 buildings <- buildings %>% 
-  bind_cols(roof_slope = test) 
+  add_column(Slope = pred) 
 
 # add value field, low slope = 41, high slope = 42
 buildings <- buildings %>% 
-  mutate(Value = case_when(roof_slope == "low" ~ 41,
-                           roof_slope == "high" ~ 42))
+  mutate(Value = case_when(Slope == "low" ~ 41,
+                           Slope == "high" ~ 42))
 
 
 ## Rasterize ---------------------------------------------------------------
@@ -434,10 +442,13 @@ buildings <- buildings %>%
 buildings_rast <- buildings %>% 
   rasterize(esa, 
             field = "Value",
-            filename = paste0(path, "/buildings_1m.tif"))
+            background = 0,
+            filename = paste0(path, "/buildings_1m.tif"),
+            overwrite = TRUE)
 
-#rm(buildings)
+# rm(buildings)
 
+# buildings_rast <- rast(here(path, "buildings_1m.tif"))
 
 # Parking -----------------------------------------------------------------
 
@@ -460,9 +471,13 @@ parking <- parking %>%
 parking_rast <- parking %>% 
   rasterize(esa, 
             field = "Value",
-            filename = paste0(path, "/parking_1m.tif"))
+            background = 0,
+            filename = paste0(path, "/parking_1m.tif"),
+            overwrite = TRUE)
 
 rm(parking)
+
+# parking_rast <- rast(here(path, "parking_1m.tif"))
 
 # Combine rasters ---------------------------------------------------------
 
@@ -473,7 +488,12 @@ LULC <- sds(esa,
           buildings_rast,
           parking_rast)
 
-LULC2 <- app(LULC, max)
+LULC <- app(LULC, max)
 
-writeRaster(LULC2, paste0(path, "/LULC_1m.tif"), overwrite = TRUE)
+# Reclass ESA water (4) to 30
+LULC <- classify(LULC, cbind(4, 30))
+
+writeRaster(LULC, 
+            here(path, "LULC_1m.tif"), 
+            overwrite = TRUE)
 
