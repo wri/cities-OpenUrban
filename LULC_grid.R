@@ -1072,7 +1072,7 @@ create_LULC <- function(city, epsg){
     
     LULC <- classify(LULC, reclass)
     
-    filename <- paste0("LULC_1m_", i, ".tif")
+    filename <- paste0(city_name, "_LULC_1m_", i, ".tif")
     
     writeRaster(LULC, 
                 here(path, filename), 
