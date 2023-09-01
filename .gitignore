@@ -166,3 +166,6 @@ cython_debug/
 
 # Misc.
 /cache/
+
+# old files
+/old/
