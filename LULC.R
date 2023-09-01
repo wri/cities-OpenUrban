@@ -50,9 +50,11 @@ create_LULC <- function(city, epsg, GEE_folder){
   
   # Create bounding box for urban area
   # buffered by 804.672 (half a mile in meters)
+  # divide into grid for processing
   bb <- city %>% 
     st_buffer(dist = 804.672) %>% 
-    st_bbox() 
+    st_bbox() %>% 
+    st_make_grid(cellsize = c(0.5, 0.5), what = "polygons")
   
   bb_ee <-  sf_as_ee(st_as_sfc(bb))
   
@@ -150,7 +152,8 @@ create_LULC <- function(city, epsg, GEE_folder){
   
   # List ESA Images in drive folder
   drive_folder <- "rgee_backup"
-  imgs <- drive_ls(drive_folder)
+  imgs <- drive_ls(drive_folder,
+                   pattern = "ESA")
     
   ids <- imgs$id
   
@@ -213,6 +216,7 @@ LULC_byIMG <- function(img_id, index){
   } 
   
   open_space1 <- retry(get_open_space1(esa_bb), when = "runtime error")
+  print("open space 1")
   
   get_open_space2 <- function(esa_bb){
     opq(esa_bb) %>% 
@@ -222,6 +226,7 @@ LULC_byIMG <- function(img_id, index){
   }
   
   open_space2 <- retry(get_open_space2(esa_bb), when = "runtime error")
+  print("open space 2")
   
   open_space <- c(open_space1, open_space2)
   
@@ -233,12 +238,13 @@ LULC_byIMG <- function(img_id, index){
   # Combine polygons and multipolygons
   open_space <- open_space$osm_polygons %>% 
     bind_rows(st_cast(open_space$osm_multipolygons, "POLYGON")) 
+  print("open space combined polygons")
   
   # Reproject to local state plane and add value field (10)
   open_space <- open_space %>% 
     st_transform(epsg) %>% 
     mutate(Value = 10)
-  
+  print("open space reproject")
   
   ## Rasterize ---------------------------------------------------------------
   
@@ -273,6 +279,7 @@ LULC_byIMG <- function(img_id, index){
   }
   
   roads <- retry(get_roads(esa_bb), when = "runtime error")
+  print("roads osm")
   
   # select lines geometries
   roads <- roads$osm_lines %>% 
@@ -301,6 +308,8 @@ LULC_byIMG <- function(img_id, index){
   roads <- roads %>% 
     st_transform(epsg) 
   
+  print("roads reproject")
+  
   
   ## Buffer ------------------------------------------------------------------
   
@@ -312,7 +321,7 @@ LULC_byIMG <- function(img_id, index){
     st_buffer(dist = roads$lanes * 3.048,
               endCapStyle = "FLAT",
               joinStyle = "MITRE")
-  
+  print("roads buffered")
   
   ## Rasterize ---------------------------------------------------------------
   
@@ -342,6 +351,7 @@ LULC_byIMG <- function(img_id, index){
   } 
   
   water1 <- retry(get_water1(esa_bb), when = "runtime error")
+  print("water osm")
   
   get_water2 <- function(esa_bb){
     opq(esa_bb) %>% 
@@ -350,6 +360,7 @@ LULC_byIMG <- function(img_id, index){
   }
   
   water2 <- retry(get_water2(esa_bb), when = "runtime error")
+  print("water 2 osm")
   
   water <- c(water1, water2)
   
@@ -366,6 +377,7 @@ LULC_byIMG <- function(img_id, index){
   water <- water %>% 
     st_transform(epsg) %>% 
     mutate(Value = 30)
+  print("water reproject")
   
   ## Rasterize ---------------------------------------------------------------
   
@@ -462,6 +474,7 @@ LULC_byIMG <- function(img_id, index){
   }
   
   buildings <- retry(get_buildings(esa_bb), when = "runtime error")
+  print("buildings OSM")
   
   # Combine polygons and multipolygons
   buildings <- buildings$osm_polygons %>% 
@@ -476,10 +489,12 @@ LULC_byIMG <- function(img_id, index){
   # Reproject buildings to match ULU
   buildings <- buildings %>% 
     st_transform(crs = st_crs(ulu))
+  print("buildings reproject")
   
   # Extract values to buildings using exact_extract, as coverage fractions
   # https://github.com/isciences/exactextractr
   build_ulu <- exactextractr::exact_extract(ulu, buildings, 'frac') 
+  print("buildings ulu extract")
   
   # Assign the max coverage class to the building if it is not roads,
   # If the max class is roads assign the minority class
@@ -503,6 +518,7 @@ LULC_byIMG <- function(img_id, index){
   
   buildings <- buildings %>% 
     add_column(ULU = build_ulu$ULU)
+  print("buildings ulu class")
   
   toc()
   
@@ -547,6 +563,7 @@ LULC_byIMG <- function(img_id, index){
   
   buildings <- buildings %>% 
     add_column(ANBH = avg_ht)
+  print("buildings anbh")
   
   toc()
   
@@ -556,6 +573,7 @@ LULC_byIMG <- function(img_id, index){
   buildings <- buildings %>% 
     st_transform(epsg) %>% 
     mutate(Area_m = as.numeric(st_area(.)))
+  print("buildings reproject")
   
   
   ## Classification of roof slope --------------------------------------------
@@ -570,6 +588,7 @@ LULC_byIMG <- function(img_id, index){
   buildings <- buildings %>% 
     mutate(Value = case_when(Slope == "low" ~ 41,
                              Slope == "high" ~ 42))
+  print("buildings reclass")
   
   
   ## Rasterize ---------------------------------------------------------------
@@ -591,10 +610,15 @@ LULC_byIMG <- function(img_id, index){
   tic("Parking")
   
   # get open space from OSM
-  parking <- opq(esa_bb) %>% 
+  get_parking <- function(esa_bb){
+    opq(esa_bb) %>% 
     add_osm_feature(key = 'amenity',
                     value = 'parking') %>% 
     osmdata_sf() 
+  }
+  
+  parking <- retry(get_parking(esa_bb), when = "runtime error")
+  print("parking osm")
   
   # Combine polygons and multipolygons
   parking <- parking$osm_polygons %>% 
