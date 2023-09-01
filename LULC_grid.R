@@ -65,11 +65,12 @@ create_LULC <- function(city, epsg){
     st_filter(city) %>% 
     mutate(ID = row_number())
   
-  ggplot() +
-    geom_sf(data = city) +
-    geom_sf(data = city_grid, fill = NA) 
+  # ggplot() +
+  #   geom_sf(data = city) +
+  #   geom_sf(data = city_grid, fill = NA) 
   
-  for (i in 1:length(city_grid$ID)){
+  ######### CHANGE ########
+  for (i in 4:length(city_grid$ID)){
     # Buffer grid cell so there will be overlap
     aoi <- city_grid %>% 
       filter(ID == i) %>% 
@@ -82,9 +83,9 @@ create_LULC <- function(city, epsg){
     
     bb_ee <- sf_as_ee(st_as_sfc(bb))
     
-    ggplot() +
-      geom_sf(data = city) +
-      geom_sf(data = aoi, fill = NA)
+    # ggplot() +
+    #   geom_sf(data = city) +
+    #   geom_sf(data = aoi, fill = NA)
     
     # ESA Worldcover ----------------------------------------------------------
     
