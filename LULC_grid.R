@@ -65,12 +65,11 @@ create_LULC <- function(city, epsg){
     st_filter(city) %>% 
     mutate(ID = row_number())
   
-  # ggplot() +
-  #   geom_sf(data = city) +
-  #   geom_sf(data = city_grid, fill = NA) 
+  ggplot() +
+    geom_sf(data = city) +
+    geom_sf(data = city_grid, fill = NA)
   
-  ######### CHANGE ########
-  for (i in 4:length(city_grid$ID)){
+  for (i in 1:length(city_grid$ID)){
     # Buffer grid cell so there will be overlap
     aoi <- city_grid %>% 
       filter(ID == i) %>% 
@@ -83,9 +82,9 @@ create_LULC <- function(city, epsg){
     
     bb_ee <- sf_as_ee(st_as_sfc(bb))
     
-    # ggplot() +
-    #   geom_sf(data = city) +
-    #   geom_sf(data = aoi, fill = NA)
+    ggplot() +
+      geom_sf(data = city) +
+      geom_sf(data = aoi, fill = NA)
     
     # ESA Worldcover ----------------------------------------------------------
     
@@ -137,10 +136,6 @@ create_LULC <- function(city, epsg){
     
     # esa_rast <- rast(here(path, "ESA_1m.tif"))
     
-    # test.bb <- esa_rast %>% 
-    #   st_bbox() %>% 
-    #   st_as_sfc()
-    # 
     # ggplot() +
     #   geom_sf(data = city) +
     #   geom_sf(data = test.bb, fill = NA) +
@@ -522,6 +517,14 @@ create_LULC <- function(city, epsg){
     
     ulu = ulu$remap(FROM, TO)
     
+    # if there is no ULU data, skip to the next iteration
+      
+    skip_to_next <- FALSE
+    
+    tryCatch(ee_print(ulu), error = function(e) {skip_to_next <<- TRUE})
+    
+    if(skip_to_next) { next }  
+    
     # Download from Google Drive to city folder
     ulu_img <- ee_as_rast(ulu,
                           region = bb_ee,
@@ -529,6 +532,7 @@ create_LULC <- function(city, epsg){
                           scale = 5,
                           maxPixels = 10e10,
                           lazy = TRUE) 
+    
     
     ulu <- ulu_img %>% 
       ee_utils_future_value() %>% 
@@ -1092,6 +1096,6 @@ create_LULC <- function(city, epsg){
   
 }
 
-create_LULC(city = "Dallas", 
-            epsg = 2276)
+create_LULC(city = "Charlotte", 
+            epsg = 2264)
   
