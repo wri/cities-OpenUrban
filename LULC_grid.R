@@ -170,7 +170,10 @@ create_LULC <- function(city, epsg){
     get_open_space2 <- function(bb){
       opq(bb) %>% 
         add_osm_feature(key = 'boundary',
-                        value = c('protected_area','national_park')) %>% 
+                        value = c('protected_area',
+                                  'national_park',
+                                  'forest_compartment',
+                                  'forest')) %>% 
         osmdata_sf()
     }
     
