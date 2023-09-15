@@ -291,14 +291,25 @@ create_LULC <- function(city, epsg){
     
     get_water2 <- function(bb){
       opq(bb) %>% 
-        add_osm_feature(key = 'natural', value = 'water') %>% 
+        add_osm_feature(key = 'natural', 
+                        value = c('water',
+                                  'wetland')) %>% 
         osmdata_sf()
     }
     
     water2 <- retry(get_water2(bb), when = "runtime error")
     print("water 2 osm")
     
-    water <- c(water1, water2)
+    get_water3 <- function(bb){
+      opq(bb) %>% 
+        add_osm_feature(key = 'waterway') %>% 
+        osmdata_sf()
+    }
+    
+    water3 <- retry(get_water3(bb), when = "runtime error")
+    print("water 3 osm")
+    
+    water <- c(water1, water2, water3)
     
     rm(water1)
     rm(water2)
