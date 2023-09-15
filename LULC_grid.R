@@ -18,7 +18,7 @@ reticulate::use_condaenv("rgee")
 
 # Initialize Earth Engine and GD
 # ee_Authenticate("ejwesley")
-ee_Initialize("ejwesley", drive = TRUE)
+ee_Initialize("ejwesley", drive = TRUE, gcs = TRUE)
 
 # LULC raster creation function -------------------------------------------
 
@@ -69,7 +69,8 @@ create_LULC <- function(city, epsg){
     geom_sf(data = city) +
     geom_sf(data = city_grid, fill = NA)
   
-  for (i in 1:length(city_grid$ID)){
+  #### CHANGE ####
+  for (i in 5:length(city_grid$ID)){
     # Buffer grid cell so there will be overlap
     aoi <- city_grid %>% 
       filter(ID == i) %>% 
@@ -1076,11 +1077,26 @@ create_LULC <- function(city, epsg){
     
     LULC <- classify(LULC, reclass)
     
-    filename <- paste0(city_name, "_LULC_1m_", i, ".tif")
-    
     writeRaster(LULC, 
-                here(path, filename), 
+                here(path, "LULC.tif"), 
                 overwrite = TRUE)
+    
+    # 2. From local to gcs
+    gs_uri <- local_to_gcs(
+      x = here(path, "LULC.tif"),
+      bucket = 'wri-cities-lulc-gee' 
+    )
+    
+    assetID <- paste0("projects/wri-datalab/cities/SSC/LULC/", city_name, "_LULC_1m_", i)
+    
+    # 3. Create an Image Manifest
+    manifest <- ee_utils_create_manifest_image(gs_uri, assetID)
+    
+    # 4. From GCS to Earth Engine
+    gcs_to_ee_image(
+      manifest = manifest,
+      overwrite = FALSE
+    )
     
     print("LULC raster saved")
     toc()
@@ -1096,6 +1112,11 @@ create_LULC <- function(city, epsg){
   
 }
 
-create_LULC(city = "Charlotte", 
-            epsg = 2264)
-  
+create_LULC(city = "Jacksonville", 
+            epsg = 2236)
+
+
+
+
+
+
