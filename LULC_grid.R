@@ -268,14 +268,35 @@ create_LULC <- function(city, epsg){
     
     ## Get OSM roads data ----------------------------------------------------------------
     
+    # Values from https://taginfo.openstreetmap.org/keys/highway#values
+    # Chosen based on description, excluding footways, etc.
+    # Values w/o descriptions not included
+    
     # get roads from OSM
     get_roads <- function(bb){
       opq(bb) %>% 
         add_osm_feature(key = 'highway',
-                        value = c('motorway', 'trunk', 'primary', 'secondary', 
-                                  'tertiary', 'residential', 'unclassified', 
-                                  'motorway_link', 'trunk_link', 'primary_link', 
-                                  'secondary_link', 'tertiary_link', 'living_street')) %>% 
+                        value = c("residential",
+                                  "service",
+                                  "unclassified",
+                                  "tertiary",
+                                  "secondary",
+                                  "primary",
+                                  "turning_circle",
+                                  "living_street",
+                                  "trunk",
+                                  "motorway",
+                                  "motorway_link",
+                                  "trunk_link",
+                                  "primary_link",
+                                  "secondary_link",
+                                  "tertiary_link",
+                                  "motorway_junction",
+                                  "turning_loop",
+                                  "road",
+                                  "mini_roundabout",
+                                  "passing_place",
+                                  "busway")) %>% 
         osmdata_sf() 
     }
     
