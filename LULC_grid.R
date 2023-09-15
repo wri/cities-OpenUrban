@@ -151,8 +151,16 @@ create_LULC <- function(city, epsg){
     get_open_space1 <- function(bb){
       opq(bb) %>% 
         add_osm_feature(key = 'leisure',
-                        value = c('park', 'nature_reserve', 'common', 
-                                  'playground', 'pitch', 'track')) %>% 
+                        value = c("pitch",
+                                  "park",
+                                  "garden",
+                                  "playground",
+                                  "nature_reserve",
+                                  "golf_course",
+                                  "common",
+                                  "dog_park",
+                                  "recreation_ground",
+                                  "disc_golf_course")) %>% 
         osmdata_sf()
     } 
     
