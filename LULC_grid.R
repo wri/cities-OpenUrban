@@ -1141,7 +1141,7 @@ create_LULC <- function(city, epsg){
       bucket = 'wri-cities-lulc-gee' 
     )
     
-    assetID <- paste0("projects/wri-datalab/cities/SSC/LULC/", city_name, "_LULC_1m_", i)
+    assetID <- paste0("projects/wri-datalab/cities/SSC/LULC_V2/", city_name, "_LULC_1m_", i)
     
     # 3. Create an Image Manifest
     manifest <- ee_utils_create_manifest_image(gs_uri, assetID)
