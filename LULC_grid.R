@@ -1166,11 +1166,26 @@ create_LULC <- function(city, epsg){
   
 }
 
-create_LULC(city = "Jacksonville", 
-            epsg = 2236)
+# Cities and state plane epsg codes to iterate through
+# from https://spatialreference.org/
+# all NAD83 (ft)
 
+aois <- tribble(~ city, ~ epsg, ~ zone,
+                "New_Orleans", 3452, "Louisiana South",
+                "Dallas", 2276, "Texas North Central",
+                "Columbia", 2273, "South Carolina",
+                "Atlanta", 2240, "Georgia West",
+                "Boston", 2249, "Massachusetts Mainland",
+                "Phoenix", 2223, "Arizona Central",
+                "Portland", 2269, "Oregon North",
+                "Charlotte", 2264, "North Carolina",
+                "Jacksonville", 2236, "Florida East",
+                "San Antonio", 2278, "Texas South Central")
 
+# Iterate function for LULC creation over aois
 
+aois %>% 
+  walk2(city, epsg, create_LULC)
 
 
 
