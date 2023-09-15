@@ -997,15 +997,26 @@ create_LULC <- function(city, epsg){
     tic("Parking")
     
     # get open space from OSM
-    get_parking <- function(bb){
+    get_parking1 <- function(bb){
       opq(bb) %>% 
         add_osm_feature(key = 'amenity',
                         value = 'parking') %>% 
         osmdata_sf() 
     }
     
-    parking <- retry(get_parking(bb), when = "runtime error")
+    parking1 <- retry(get_parking1(bb), when = "runtime error")
     print("parking osm")
+    
+    get_parking2 <- function(bb){
+      opq(bb) %>% 
+        add_osm_feature(key = 'parking') %>% 
+        osmdata_sf() 
+    }
+    
+    parking2 <- retry(get_parking2(bb), when = "runtime error")
+    print("parking osm")
+    
+    parking <- c(parking1, parking2)
     
     unloadNamespace("osmdata")
     library(osmdata)
