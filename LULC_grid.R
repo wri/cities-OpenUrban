@@ -325,7 +325,7 @@ create_LULC <- function(city, epsg){
       
       water <- water %>% 
         st_transform(epsg) %>% 
-        mutate(Value = 30) %>% 
+        mutate(Value = 20) %>% 
         select(Value)
       
       print("water combined polygons")
@@ -370,7 +370,7 @@ create_LULC <- function(city, epsg){
       
       water <- water %>% 
         st_transform(epsg) %>% 
-        mutate(Value = 30) %>% 
+        mutate(Value = 20) %>% 
         select(Value)
       
       print("open space combined polygons")
@@ -1149,7 +1149,7 @@ create_LULC <- function(city, epsg){
     # 4. From GCS to Earth Engine
     gcs_to_ee_image(
       manifest = manifest,
-      overwrite = FALSE
+      overwrite = TRUE
     )
     
     print("LULC raster saved")
@@ -1184,8 +1184,7 @@ aois <- tribble(~ city, ~ epsg, ~ zone,
 
 # Iterate function for LULC creation over aois
 
-aois %>% 
-  walk2(city, epsg, create_LULC)
+walk2(aois$city, aois$epsg, create_LULC)
 
 
 
