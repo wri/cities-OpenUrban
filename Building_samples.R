@@ -40,15 +40,16 @@ aois <- tribble(~ city, ~ epsg, ~ zone, ~geoid,
 cities <- cities %>% 
   filter(GEOID10 %in% aois$geoid)
 
-build.samp <- tibble()
+build.samp <- st_sf(st_sfc())
+st_crs(build.samp) = 4326
 
 # Sample per city
 for (i in 1:nrow(cities)){
   
   city <- cities %>% 
     slice(i)
-  
-  city_bb <- city %>% 
+
+   city_bb <- city %>% 
     st_bbox() 
   
   # create 10x10 grid over city
@@ -58,12 +59,12 @@ for (i in 1:nrow(cities)){
     st_filter(city) %>% 
     mutate(ID = row_number())
   
-  city_samp <- tibble()
+  city.samp <- tibble()
   
-  for (x in 1:length(city_grid$ID)){
+  for (x in 1:nrow(city_grid)){
     # Buffer grid cell so there will be overlap
     aoi <- city_grid %>% 
-      filter(ID == x) %>% 
+      slice(x) %>% 
       st_as_sf() 
     
     bb <- st_bbox(aoi)
@@ -100,29 +101,27 @@ for (i in 1:nrow(cities)){
       select(osm_id) %>% 
       mutate(city = city$GEOID10)
     
-    # Sample 10% of buildings. If the area has so few buildings that 10% < 1, 
+    # Sample 1% of buildings. If the area has so few buildings that 1% < 1, 
     # sample 1 building.
-    if(nrow(buildings) * 0.1 < 1){
+    if(nrow(buildings) * 0.01 < 1){
       
-      buildings2 <- buildings %>% 
+      buildings <- buildings %>% 
         slice_sample(n = 1)
       
     } else {
       
-      buildings2 <- buildings %>% 
-        slice_sample(prop = 0.1)
+      buildings <- buildings %>% 
+        slice_sample(prop = 0.01)
       
     }
 
     city.samp <- rbind(city.samp, buildings)
-    print(paste0(city$NAME10, " grid ", i))
-    
-  }
+    print(paste0(city$NAME10, " grid ", x))
+    print(paste0(nrow(city.samp), " buildings"))}
   
   build.samp <- rbind(city.samp, build.samp)
-  
+  print("Next city")
   
 }
 
-walk(cities, samp)
 
