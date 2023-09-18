@@ -69,8 +69,7 @@ create_LULC <- function(city, epsg){
     geom_sf(data = city) +
     geom_sf(data = city_grid, fill = NA)
   
-  #### CHANGE ####
-  for (i in 5:length(city_grid$ID)){
+  for (i in 1:length(city_grid$ID)){
     # Buffer grid cell so there will be overlap
     aoi <- city_grid %>% 
       filter(ID == i) %>% 
@@ -190,7 +189,7 @@ create_LULC <- function(city, epsg){
     
     ## Tidy --------------------------------------------------------------------
     
-    if (!is.null(open_space$osm_polygons) & !is.null(open_space$osm_multipolygons)){
+    if (!is.null(nrow(open_space$osm_polygons)) & !is.null(nrow(open_space$osm_multipolygons))){
       # if there are polygons & multipolygons
       open_space <- open_space$osm_polygons %>% 
         bind_rows(st_cast(open_space$osm_multipolygons, "POLYGON")) 
@@ -213,7 +212,7 @@ create_LULC <- function(city, epsg){
       
       print("Open space raster saved")
       
-    } else if (!is.null(open_space$osm_polygons) & is.null(open_space$osm_multipolygons)){
+    } else if (!is.null(nrow(open_space$osm_polygons)) & is.null(nrow(open_space$osm_multipolygons))){
       # if there are polygons but no multipolygons
       open_space <- open_space$osm_polygons
       
@@ -235,7 +234,7 @@ create_LULC <- function(city, epsg){
       
       print("Open space raster saved")
       
-    } else if (is.null(open_space$osm_polygons) & !is.null(open_space$osm_multipolygons)){
+    } else if (is.null(nrow(open_space$osm_polygons)) & !is.null(nrow(open_space$osm_multipolygons))){
       # if there are multipolygons but no polygons
       
       open_space <- st_cast(open_space$osm_multipolygons, "POLYGON")
@@ -318,7 +317,7 @@ create_LULC <- function(city, epsg){
     library(osmdata)
     
     # if there are polygons but no multipolygons
-    if (!is.null(water$osm_polygons) & !is.null(water$osm_multipolygons)){
+    if (!is.null(nrow(water$osm_polygons)) & !is.null(nrow(water$osm_multipolygons))){
       # if there are polygons & multipolygons
       water <- water$osm_polygons %>% 
         bind_rows(st_cast(water$osm_multipolygons, "POLYGON")) 
@@ -341,7 +340,7 @@ create_LULC <- function(city, epsg){
       
       print("water raster saved")
       
-    } else if (!is.null(water$osm_polygons) & is.null(water$osm_multipolygons)){
+    } else if (!is.null(nrow(water$osm_polygons)) & is.null(nrow(water$osm_multipolygons))){
       
       water <- water$osm_polygons
       
@@ -363,7 +362,7 @@ create_LULC <- function(city, epsg){
       
       print("water raster saved")
       
-    } else if (is.null(water$osm_polygons) & !is.null(water$osm_multipolygons)){
+    } else if (is.null(nrow(water$osm_polygons)) & !is.null(nrow(water$osm_multipolygons))){
       # if there are multipolygons but no polygons
       
       water <- st_cast(water$osm_multipolygons, "POLYGON")
@@ -635,8 +634,9 @@ create_LULC <- function(city, epsg){
     library(osmdata)
     
     # if there are polygons but no multipolygons
-    if (!is.null(buildings$osm_polygons) & !is.null(buildings$osm_multipolygons)){
+    if (!is.null(nrow(buildings$osm_polygons)) & !is.null(nrow(buildings$osm_multipolygons))){
       # if there are polygons & multipolygons
+      
       buildings <- buildings$osm_polygons %>% 
         bind_rows(st_cast(buildings$osm_multipolygons, "POLYGON")) 
       
@@ -747,7 +747,8 @@ create_LULC <- function(city, epsg){
       print("Buildings raster saved")
       toc()
       
-    } else if (!is.null(buildings$osm_polygons) & is.null(buildings$osm_multipolygons)){
+    } else if (!is.null(nrow(buildings$osm_polygons)) & is.null(nrow(buildings$osm_multipolygons))){
+      # if there are polygons but no multipolygons
       
       buildings <- buildings$osm_polygons
       
@@ -859,7 +860,7 @@ create_LULC <- function(city, epsg){
       print("Buildings raster saved")
       toc()
       
-    } else if (is.null(buildings$osm_polygons) & !is.null(buildings$osm_multipolygons)){
+    } else if (is.null(nrow(buildings$osm_polygons)) & !is.null(nrow(buildings$osm_multipolygons))){
       # if there are multipolygons but no polygons
       
       buildings <- st_cast(buildings$osm_multipolygons, "POLYGON")
@@ -1022,7 +1023,7 @@ create_LULC <- function(city, epsg){
     library(osmdata)
     
     # if there are polygons but no multipolygons
-    if (!is.null(parking$osm_polygons) & !is.null(parking$osm_multipolygons)){
+    if (!is.null(nrow(parking$osm_polygons)) & !is.null(nrow(parking$osm_multipolygons))){
       # if there are polygons & multipolygons
       parking <- parking$osm_polygons %>% 
         bind_rows(st_cast(parking$osm_multipolygons, "POLYGON")) 
@@ -1045,7 +1046,7 @@ create_LULC <- function(city, epsg){
       
       print("parking raster saved")
       
-    } else if (!is.null(parking$osm_polygons) & is.null(parking$osm_multipolygons)){
+    } else if (!is.null(nrow(parking$osm_polygons)) & is.null(nrow(parking$osm_multipolygons))){
       
       parking <- parking$osm_polygons
       
@@ -1067,7 +1068,7 @@ create_LULC <- function(city, epsg){
       
       print("parking raster saved")
       
-    } else if (is.null(parking$osm_polygons) & !is.null(parking$osm_multipolygons)){
+    } else if (is.null(nrow(parking$osm_polygons)) & !is.null(nrow(parking$osm_multipolygons))){
       # if there are multipolygons but no polygons
       
       parking <- st_cast(parking$osm_multipolygons, "POLYGON")
@@ -1170,21 +1171,22 @@ create_LULC <- function(city, epsg){
 # from https://spatialreference.org/
 # all NAD83 (ft)
 
-aois <- tribble(~ city, ~ epsg, ~ zone,
-                "New_Orleans", 3452, "Louisiana South",
-                "Dallas", 2276, "Texas North Central",
-                "Columbia", 2273, "South Carolina",
-                "Atlanta", 2240, "Georgia West",
-                "Boston", 2249, "Massachusetts Mainland",
-                "Phoenix", 2223, "Arizona Central",
-                "Portland", 2269, "Oregon North",
-                "Charlotte", 2264, "North Carolina",
-                "Jacksonville", 2236, "Florida East",
-                "San Antonio", 2278, "Texas South Central")
+aois <- tribble(~ city, ~ epsg, ~ zone, ~geoid, 
+                "New_Orleans", 3452, "Louisiana South", "62677",
+                "Dallas", 2276, "Texas North Central", "22042", 
+                "Columbia", 2273, "South Carolina", "18964", 
+                "Atlanta", 2240, "Georgia West", "03817", 
+                "Boston", 2249, "Massachusetts Mainland", "09271", 
+                "Phoenix", 2223, "Arizona Central", "69184", 
+                "Portland", 2269, "Oregon North", "71317",
+                "Charlotte", 2264, "North Carolina", "15670", 
+                "Jacksonville", 2236, "Florida East", "42346",
+                "San Antonio", 2278, "Texas South Central", "78580")
 
 # Iterate function for LULC creation over aois
 
 walk2(aois$city, aois$epsg, create_LULC)
+
 
 
 
