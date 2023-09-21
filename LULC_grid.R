@@ -18,7 +18,7 @@ reticulate::use_condaenv("rgee")
 
 # Initialize Earth Engine and GD
 # ee_Authenticate("ejwesley")
-ee_Initialize("ejwesley", drive = TRUE)
+ee_Initialize("ejwesley", drive = TRUE, gcs = TRUE)
 
 # LULC raster creation function -------------------------------------------
 
@@ -150,8 +150,16 @@ create_LULC <- function(city, epsg){
     get_open_space1 <- function(bb){
       opq(bb) %>% 
         add_osm_feature(key = 'leisure',
-                        value = c('park', 'nature_reserve', 'common', 
-                                  'playground', 'pitch', 'track')) %>% 
+                        value = c("pitch",
+                                  "park",
+                                  "garden",
+                                  "playground",
+                                  "nature_reserve",
+                                  "golf_course",
+                                  "common",
+                                  "dog_park",
+                                  "recreation_ground",
+                                  "disc_golf_course")) %>% 
         osmdata_sf()
     } 
     
@@ -161,7 +169,10 @@ create_LULC <- function(city, epsg){
     get_open_space2 <- function(bb){
       opq(bb) %>% 
         add_osm_feature(key = 'boundary',
-                        value = c('protected_area','national_park')) %>% 
+                        value = c('protected_area',
+                                  'national_park',
+                                  'forest_compartment',
+                                  'forest')) %>% 
         osmdata_sf()
     }
     
@@ -178,7 +189,7 @@ create_LULC <- function(city, epsg){
     
     ## Tidy --------------------------------------------------------------------
     
-    if (!is.null(open_space$osm_polygons) & !is.null(open_space$osm_multipolygons)){
+    if (!is.null(nrow(open_space$osm_polygons)) & !is.null(nrow(open_space$osm_multipolygons))){
       # if there are polygons & multipolygons
       open_space <- open_space$osm_polygons %>% 
         bind_rows(st_cast(open_space$osm_multipolygons, "POLYGON")) 
@@ -201,7 +212,7 @@ create_LULC <- function(city, epsg){
       
       print("Open space raster saved")
       
-    } else if (!is.null(open_space$osm_polygons) & is.null(open_space$osm_multipolygons)){
+    } else if (!is.null(nrow(open_space$osm_polygons)) & is.null(nrow(open_space$osm_multipolygons))){
       # if there are polygons but no multipolygons
       open_space <- open_space$osm_polygons
       
@@ -223,7 +234,7 @@ create_LULC <- function(city, epsg){
       
       print("Open space raster saved")
       
-    } else if (is.null(open_space$osm_polygons) & !is.null(open_space$osm_multipolygons)){
+    } else if (is.null(nrow(open_space$osm_polygons)) & !is.null(nrow(open_space$osm_multipolygons))){
       # if there are multipolygons but no polygons
       
       open_space <- st_cast(open_space$osm_multipolygons, "POLYGON")
@@ -261,20 +272,171 @@ create_LULC <- function(city, epsg){
       
     }
     
+    # Water -------------------------------------------------------------------
+    
+    tic("Water")
+    
+    ## Get OSM water data --------------------------------------------------------------
+    
+    # get water from OSM
+    get_water1 <- function(bb){
+      opq(bb) %>% 
+        add_osm_feature(key = 'water') %>% 
+        osmdata_sf()
+    } 
+    
+    water1 <- retry(get_water1(bb), when = "runtime error")
+    print("water osm")
+    
+    get_water2 <- function(bb){
+      opq(bb) %>% 
+        add_osm_feature(key = 'natural', 
+                        value = c('water',
+                                  'wetland')) %>% 
+        osmdata_sf()
+    }
+    
+    water2 <- retry(get_water2(bb), when = "runtime error")
+    print("water 2 osm")
+    
+    get_water3 <- function(bb){
+      opq(bb) %>% 
+        add_osm_feature(key = 'waterway') %>% 
+        osmdata_sf()
+    }
+    
+    water3 <- retry(get_water3(bb), when = "runtime error")
+    print("water 3 osm")
+    
+    water <- c(water1, water2, water3)
+    
+    rm(water1)
+    rm(water2)
+    
+    unloadNamespace("osmdata")
+    library(osmdata)
+    
+    # if there are polygons but no multipolygons
+    if (!is.null(nrow(water$osm_polygons)) & !is.null(nrow(water$osm_multipolygons))){
+      # if there are polygons & multipolygons
+      water <- water$osm_polygons %>% 
+        bind_rows(st_cast(water$osm_multipolygons, "POLYGON")) 
+      
+      water <- water %>% 
+        st_transform(epsg) %>% 
+        mutate(Value = 20) %>% 
+        select(Value)
+      
+      print("water combined polygons")
+      
+      water %>% 
+        rasterize(esa_rast, 
+                  field = "Value",
+                  background = 0,
+                  filename = here(path, "water_1m.tif"),
+                  overwrite = TRUE)
+      
+      rm(water)
+      
+      print("water raster saved")
+      
+    } else if (!is.null(nrow(water$osm_polygons)) & is.null(nrow(water$osm_multipolygons))){
+      
+      water <- water$osm_polygons
+      
+      water <- water %>% 
+        st_transform(epsg) %>% 
+        mutate(Value = 20) %>% 
+        select(Value)
+      
+      print("water combined polygons")
+      
+      water %>% 
+        rasterize(esa_rast, 
+                  field = "Value",
+                  background = 0,
+                  filename = here(path, "water_1m.tif"),
+                  overwrite = TRUE)
+      
+      rm(water)
+      
+      print("water raster saved")
+      
+    } else if (is.null(nrow(water$osm_polygons)) & !is.null(nrow(water$osm_multipolygons))){
+      # if there are multipolygons but no polygons
+      
+      water <- st_cast(water$osm_multipolygons, "POLYGON")
+      
+      water <- water %>% 
+        st_transform(epsg) %>% 
+        mutate(Value = 20) %>% 
+        select(Value)
+      
+      print("open space combined polygons")
+      
+      water %>% 
+        rasterize(esa_rast, 
+                  field = "Value",
+                  background = 0,
+                  filename = here(path, "water_1m.tif"),
+                  overwrite = TRUE)
+      
+      rm(water)
+      
+      print("water raster saved")
+      
+    } else {
+      # if there are neither create raster of 0s
+      
+      water <- esa_rast * 0
+      
+      writeRaster(water, 
+                  here(path, "water_1m.tif"), 
+                  overwrite = TRUE)
+      
+      rm(water)
+      
+      print("water raster saved")
+      
+    }
+    
+    toc()
+    
     # Roads -------------------------------------------------------------------
     
     tic("Roads")
     
     ## Get OSM roads data ----------------------------------------------------------------
     
+    # Values from https://taginfo.openstreetmap.org/keys/highway#values
+    # Chosen based on description, excluding footways, etc.
+    # Values w/o descriptions not included
+    
     # get roads from OSM
     get_roads <- function(bb){
       opq(bb) %>% 
         add_osm_feature(key = 'highway',
-                        value = c('motorway', 'trunk', 'primary', 'secondary', 
-                                  'tertiary', 'residential', 'unclassified', 
-                                  'motorway_link', 'trunk_link', 'primary_link', 
-                                  'secondary_link', 'tertiary_link', 'living_street')) %>% 
+                        value = c("residential",
+                                  "service",
+                                  "unclassified",
+                                  "tertiary",
+                                  "secondary",
+                                  "primary",
+                                  "turning_circle",
+                                  "living_street",
+                                  "trunk",
+                                  "motorway",
+                                  "motorway_link",
+                                  "trunk_link",
+                                  "primary_link",
+                                  "secondary_link",
+                                  "tertiary_link",
+                                  "motorway_junction",
+                                  "turning_loop",
+                                  "road",
+                                  "mini_roundabout",
+                                  "passing_place",
+                                  "busway")) %>% 
         osmdata_sf() 
     }
     
@@ -307,7 +469,7 @@ create_LULC <- function(city, epsg){
     
     # Add value field (20)
     roads <- roads %>% 
-      mutate(Value = 20)
+      mutate(Value = 30)
     
     # Reproject to local state plane 
     roads <- roads %>% 
@@ -342,125 +504,6 @@ create_LULC <- function(city, epsg){
     rm(roads)
     
     print("Roads raster saved")
-    toc()
-    
-    # Water -------------------------------------------------------------------
-    
-    tic("Water")
-    
-    ## Get OSM water data --------------------------------------------------------------
-    
-    # get water from OSM
-    get_water1 <- function(bb){
-      opq(bb) %>% 
-        add_osm_feature(key = 'water') %>% 
-        osmdata_sf()
-    } 
-    
-    water1 <- retry(get_water1(bb), when = "runtime error")
-    print("water osm")
-    
-    get_water2 <- function(bb){
-      opq(bb) %>% 
-        add_osm_feature(key = 'natural', value = 'water') %>% 
-        osmdata_sf()
-    }
-    
-    water2 <- retry(get_water2(bb), when = "runtime error")
-    print("water 2 osm")
-    
-    water <- c(water1, water2)
-    
-    rm(water1)
-    rm(water2)
-    
-    unloadNamespace("osmdata")
-    library(osmdata)
-    
-    # if there are polygons but no multipolygons
-    if (!is.null(water$osm_polygons) & !is.null(water$osm_multipolygons)){
-      # if there are polygons & multipolygons
-      water <- water$osm_polygons %>% 
-        bind_rows(st_cast(water$osm_multipolygons, "POLYGON")) 
-      
-      water <- water %>% 
-        st_transform(epsg) %>% 
-        mutate(Value = 30) %>% 
-        select(Value)
-      
-      print("water combined polygons")
-      
-      water %>% 
-        rasterize(esa_rast, 
-                  field = "Value",
-                  background = 0,
-                  filename = here(path, "water_1m.tif"),
-                  overwrite = TRUE)
-      
-      rm(water)
-      
-      print("water raster saved")
-      
-    } else if (!is.null(water$osm_polygons) & is.null(water$osm_multipolygons)){
-      
-      water <- water$osm_polygons
-      
-      water <- water %>% 
-        st_transform(epsg) %>% 
-        mutate(Value = 30) %>% 
-        select(Value)
-      
-      print("water combined polygons")
-      
-      water %>% 
-        rasterize(esa_rast, 
-                  field = "Value",
-                  background = 0,
-                  filename = here(path, "water_1m.tif"),
-                  overwrite = TRUE)
-      
-      rm(water)
-      
-      print("water raster saved")
-      
-    } else if (is.null(water$osm_polygons) & !is.null(water$osm_multipolygons)){
-      # if there are multipolygons but no polygons
-      
-      water <- st_cast(water$osm_multipolygons, "POLYGON")
-      
-      water <- water %>% 
-        st_transform(epsg) %>% 
-        mutate(Value = 30) %>% 
-        select(Value)
-      
-      print("open space combined polygons")
-      
-      water %>% 
-        rasterize(esa_rast, 
-                  field = "Value",
-                  background = 0,
-                  filename = here(path, "water_1m.tif"),
-                  overwrite = TRUE)
-      
-      rm(water)
-      
-      print("water raster saved")
-      
-    } else {
-      # if there are neither create raster of 0s
-      
-      water <- esa_rast * 0
-      
-      writeRaster(water, 
-                  here(path, "water_1m.tif"), 
-                  overwrite = TRUE)
-      
-      rm(water)
-      
-      print("water raster saved")
-      
-    }
-    
     toc()
     
     # Buildings -------------------------------------------------------------------
@@ -591,8 +634,9 @@ create_LULC <- function(city, epsg){
     library(osmdata)
     
     # if there are polygons but no multipolygons
-    if (!is.null(buildings$osm_polygons) & !is.null(buildings$osm_multipolygons)){
+    if (!is.null(nrow(buildings$osm_polygons)) & !is.null(nrow(buildings$osm_multipolygons))){
       # if there are polygons & multipolygons
+      
       buildings <- buildings$osm_polygons %>% 
         bind_rows(st_cast(buildings$osm_multipolygons, "POLYGON")) 
       
@@ -703,7 +747,8 @@ create_LULC <- function(city, epsg){
       print("Buildings raster saved")
       toc()
       
-    } else if (!is.null(buildings$osm_polygons) & is.null(buildings$osm_multipolygons)){
+    } else if (!is.null(nrow(buildings$osm_polygons)) & is.null(nrow(buildings$osm_multipolygons))){
+      # if there are polygons but no multipolygons
       
       buildings <- buildings$osm_polygons
       
@@ -815,7 +860,7 @@ create_LULC <- function(city, epsg){
       print("Buildings raster saved")
       toc()
       
-    } else if (is.null(buildings$osm_polygons) & !is.null(buildings$osm_multipolygons)){
+    } else if (is.null(nrow(buildings$osm_polygons)) & !is.null(nrow(buildings$osm_multipolygons))){
       # if there are multipolygons but no polygons
       
       buildings <- st_cast(buildings$osm_multipolygons, "POLYGON")
@@ -953,21 +998,32 @@ create_LULC <- function(city, epsg){
     tic("Parking")
     
     # get open space from OSM
-    get_parking <- function(bb){
+    get_parking1 <- function(bb){
       opq(bb) %>% 
         add_osm_feature(key = 'amenity',
                         value = 'parking') %>% 
         osmdata_sf() 
     }
     
-    parking <- retry(get_parking(bb), when = "runtime error")
+    parking1 <- retry(get_parking1(bb), when = "runtime error")
     print("parking osm")
+    
+    get_parking2 <- function(bb){
+      opq(bb) %>% 
+        add_osm_feature(key = 'parking') %>% 
+        osmdata_sf() 
+    }
+    
+    parking2 <- retry(get_parking2(bb), when = "runtime error")
+    print("parking osm")
+    
+    parking <- c(parking1, parking2)
     
     unloadNamespace("osmdata")
     library(osmdata)
     
     # if there are polygons but no multipolygons
-    if (!is.null(parking$osm_polygons) & !is.null(parking$osm_multipolygons)){
+    if (!is.null(nrow(parking$osm_polygons)) & !is.null(nrow(parking$osm_multipolygons))){
       # if there are polygons & multipolygons
       parking <- parking$osm_polygons %>% 
         bind_rows(st_cast(parking$osm_multipolygons, "POLYGON")) 
@@ -990,7 +1046,7 @@ create_LULC <- function(city, epsg){
       
       print("parking raster saved")
       
-    } else if (!is.null(parking$osm_polygons) & is.null(parking$osm_multipolygons)){
+    } else if (!is.null(nrow(parking$osm_polygons)) & is.null(nrow(parking$osm_multipolygons))){
       
       parking <- parking$osm_polygons
       
@@ -1012,7 +1068,7 @@ create_LULC <- function(city, epsg){
       
       print("parking raster saved")
       
-    } else if (is.null(parking$osm_polygons) & !is.null(parking$osm_multipolygons)){
+    } else if (is.null(nrow(parking$osm_polygons)) & !is.null(nrow(parking$osm_multipolygons))){
       # if there are multipolygons but no polygons
       
       parking <- st_cast(parking$osm_multipolygons, "POLYGON")
@@ -1070,17 +1126,32 @@ create_LULC <- function(city, epsg){
                 buildings_rast,
                 parking_rast)
     
-    # Reclass ESA water (4) to 30
+    # Reclass ESA water (4) to 20
     reclass <- cbind(from = c(1, 2, 3, 4, 10, 20, 30, 41, 42, 50),
-                     to = c(1, 2, 3, 30, 10, 20, 30, 41, 42, 50))
+                     to = c(1, 2, 3, 20, 10, 20, 30, 41, 42, 50))
     
     LULC <- classify(LULC, reclass)
     
-    filename <- paste0(city_name, "_LULC_1m_", i, ".tif")
-    
     writeRaster(LULC, 
-                here(path, filename), 
+                here(path, "LULC.tif"), 
                 overwrite = TRUE)
+    
+    # 2. From local to gcs
+    gs_uri <- local_to_gcs(
+      x = here(path, "LULC.tif"),
+      bucket = 'wri-cities-lulc-gee' 
+    )
+    
+    assetID <- paste0("projects/wri-datalab/cities/SSC/LULC_V2/", city_name, "_LULC_1m_", i)
+    
+    # 3. Create an Image Manifest
+    manifest <- ee_utils_create_manifest_image(gs_uri, assetID)
+    
+    # 4. From GCS to Earth Engine
+    gcs_to_ee_image(
+      manifest = manifest,
+      overwrite = TRUE
+    )
     
     print("LULC raster saved")
     toc()
@@ -1096,6 +1167,26 @@ create_LULC <- function(city, epsg){
   
 }
 
-create_LULC(city = "Charlotte", 
-            epsg = 2264)
-  
+# Cities and state plane epsg codes to iterate through
+# from https://spatialreference.org/
+# all NAD83 (ft)
+
+aois <- tribble(~ city, ~ epsg, ~ zone, ~geoid, 
+                "New_Orleans", 3452, "Louisiana South", "62677",
+                "Dallas", 2276, "Texas North Central", "22042", 
+                "Columbia", 2273, "South Carolina", "18964", 
+                "Atlanta", 2240, "Georgia West", "03817", 
+                "Boston", 2249, "Massachusetts Mainland", "09271", 
+                "Phoenix", 2223, "Arizona Central", "69184", 
+                "Portland", 2269, "Oregon North", "71317",
+                "Charlotte", 2264, "North Carolina", "15670", 
+                "Jacksonville", 2236, "Florida East", "42346",
+                "San Antonio", 2278, "Texas South Central", "78580")
+
+# Iterate function for LULC creation over aois
+
+walk2(aois$city, aois$epsg, create_LULC)
+
+
+
+
