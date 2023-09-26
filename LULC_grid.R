@@ -291,8 +291,7 @@ create_LULC <- function(city, epsg){
     get_water2 <- function(bb){
       opq(bb) %>% 
         add_osm_feature(key = 'natural', 
-                        value = c('water',
-                                  'wetland')) %>% 
+                        value = c('water')) %>% 
         osmdata_sf()
     }
     
@@ -1170,6 +1169,8 @@ create_LULC <- function(city, epsg){
 # Cities and state plane epsg codes to iterate through
 # from https://spatialreference.org/
 # all NAD83 (ft)
+
+create_LULC("New_Orleans", 3452)
 
 aois <- tribble(~ city, ~ epsg, ~ zone, ~geoid, 
                 "New_Orleans", 3452, "Louisiana South", "62677",
