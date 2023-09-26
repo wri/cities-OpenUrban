@@ -25,7 +25,7 @@ ee_Initialize("ejwesley", drive = TRUE, gcs = TRUE)
 # Load metro area boundaries
 cities <- st_read(here("data", "Smart_Surfaces_metro_areas", "smart_surfaces_urban_areas.shp")) 
 
-city_name <- "New_Orleans"
+city_name <- "Dallas"
 # Get city geometry
 city <- cities %>%
   filter(str_detect(NAME10, city_name))
@@ -38,10 +38,16 @@ city_bb <- city %>%
   st_bbox() 
 
 city_grid <- city_bb %>% 
-  st_make_grid(cellsize = c(0.1, 0.1), what = "polygons") %>% 
+  st_make_grid(cellsize = c(0.05, 0.05), what = "polygons") %>% 
   st_sf() %>% 
   st_filter(city) %>% 
   mutate(ID = row_number())
+
+grid_name <- paste0("users/EJWesley/SSC-city-grids/", city_name)
+
+task <- sf_as_ee(city_grid,
+         assetId = grid_name,
+         via = "getInfo_to_asset")
 
 # start and end dates
 # NAIP coverage is 2021-2023
@@ -113,6 +119,14 @@ add.NAIP.alb <- function(image){
   
 }
 
+# Read S2 data
+s2 <- ee$ImageCollection("COPERNICUS/S2_SR")
+
+
+# read NAIP 
+naip <- ee$ImageCollection("USDA/NAIP/DOQQ")
+
+
 # Iterate over city grid
 for (i in 1:length(city_grid$ID)){
   # Buffer grid cell so there will be overlap
@@ -131,18 +145,78 @@ for (i in 1:length(city_grid$ID)){
   
   # S2 albedo ---------------------------------------------------------------
 
-  # Read S2 data
-  s2 <- ee$ImageCollection("COPERNICUS/S2_SR")
-  
-  # Filter to city of interest
+  # Filter to grid, by dates, by cloud percentage < 20%
+  # Apply cloud mask
   s2_city <- s2$filterBounds(bb_ee)$
     filter(ee$Filter$date(start, end))$
     filter(ee$Filter$lt('CLOUDY_PIXEL_PERCENTAGE', 20))$
     map(maskS2clouds)
   
-  Map$addLayer(s2_city$first()$select('B2'), list(min = 0, max = 0.1))
+  s2_proj <- s2_city$first()$select('B4')$projection()$getInfo()
+  s2_project <- function(im){
+    return(ee$Image(im)$reproject(crs = s2_proj$crs, crsTransform = s2_proj$transform))
+  }
   
-  # Add albedo to S2 images 
-  s2_city_alb <- s2_city$map(add.S2.alb)
-  Map$addLayer(s2_city_alb$first()$select('albedo'), list(min = 0, max = 1))
+  # Add albedo to S2 images, take the mean image and clip to grid 
+  s2_city_alb <- s2_city$map(add.S2.alb)$
+    select('albedo')$
+    mean()$
+    clip(bb_ee)$
+    reproject(crs = s2_proj$crs, crsTransform = s2_proj$transform)
+    
+  
+  #Map$setCenter(-90.1518, 29.9862, 9)
+  Map$addLayer(s2_city_alb, list(min = 0, max = 1))
+
+  # NAIP albedo -------------------------------------------------------------
+  
+  # Filter by date & grid
+  naip_city <- naip$filterBounds(bb_ee)$
+    filter(ee$Filter$date(start, end))
+  
+  NAIP_proj <- naip_city$first()$projection()$getInfo()
+  naip_project <- function(im){
+    return(ee$Image(im)$reproject(crs = NAIP_proj$crs, crsTransform = NAIP_proj$transform))
+  }
+  
+  # Calculate albedo, take the mean image, and clip to grid
+  naip_city_alb <- naip_city$map(add.NAIP.alb)$
+    select('albedo')$
+    mean()$
+    reproject(crs = NAIP_proj$crs, crsTransform = NAIP_proj$transform)$
+    clip(bb_ee)
+    
+  
+  Map$addLayer(naip_city_alb, list(min = 0, max = 1))
+  Map$addLayer(bb_ee)
+  
+  # Upsampling --------------------------------------------------------------
+  
+  # Multiply S2 albedo by NAIP albedo
+  sp_1 <- s2_city_alb$multiply(naip_city_alb)
+  
+  # Divide S2 albedo by reprojected sp_1 to create multiplier
+  c_1 <- s2_city_alb$divide(sp_1)$rename('multiplier')
+  
+  sp_1_rp <- naip_project(sp_1)
+  
+  # Reproject sp_1 to naip, apply multiplier, then reproject to naip again
+  S2_up <- naip_project(sp_1_rp$multiply(c_1$select('multiplier')$rename('albedo')))
+  
+  description <- paste0("upsampled albedo ", city_name, " grid ", i)
+  assetId <- paste0("projects/wri-datalab/cities/SSC/S2-upsampled-albedo/", city_name, "_", i)
+  
+  task_img <- ee_image_to_asset(
+    S2_up,
+    description = description,
+    assetId = assetId,
+    region = bb_ee,
+    scale = 0.6,
+    crs = NAIP_proj$crs,
+    crsTransform = NAIP_proj$transform,
+    maxPixels = 10e10
+  )
+  
+  task_img$start()
+  
 }
