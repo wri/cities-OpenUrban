@@ -1182,12 +1182,11 @@ aois <- tribble(~ city, ~ epsg, ~ zone, ~geoid,
                 "Portland", 2269, "Oregon North", "71317",
                 "Charlotte", 2264, "North Carolina", "15670", 
                 "Jacksonville", 2236, "Florida East", "42346",
-                "San Antonio", 2278, "Texas South Central", "78580")
+                "San_Antonio", 2278, "Texas South Central", "78580")
 
 # Iterate function for LULC creation over aois
 
 walk2(aois$city, aois$epsg, create_LULC)
-
 
 
 
