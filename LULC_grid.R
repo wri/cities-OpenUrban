@@ -14,7 +14,7 @@ library(retry)
 # Set up GEE --------------------------------------------------------------
 
 # Set environment
-reticulate::use_condaenv("rgee")
+# reticulate::use_condaenv("rgee")
 
 # Initialize Earth Engine and GD
 # ee_Authenticate("ejwesley")
@@ -513,21 +513,17 @@ create_LULC <- function(city, epsg){
     
     tic("ULU")
     
-    ############# Check that first is okay here
-    # firstNonNull is used as reducer in GEE script
-    # Aug 28, used mosaic instead
-    
     # Read ULU land cover, filter to city, select lulc band
     ulu <- ee$ImageCollection('projects/wri-datalab/cities/urban_land_use/V1')$ 
       filterBounds(bb_ee)$
       select('lulc')$
-      mosaic()$
+      reduce(ee$Reducer$firstNonNull())$
       rename('lulc')
     
     roads <- ee$ImageCollection('projects/wri-datalab/cities/urban_land_use/V1')$ 
       filterBounds(bb_ee)$
       select('road')$
-      mosaic()$
+      reduce(ee$Reducer$firstNonNull())$
       rename('lulc')
     
     # Create road mask
