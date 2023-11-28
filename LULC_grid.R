@@ -30,14 +30,15 @@ create_LULC <- function(city, epsg){
   # City boundary -----------------------------------------------------------
   
   # Load metro area boundaries
-  cities <- st_read(here("data", "Smart_Surfaces_metro_areas", "smart_surfaces_urban_areas.shp")) 
+  cities <- st_read(here("data", "SSC_CensusUrbanAreas2020.shp")) 
   
-  # Choose city of interest, use underscores instead of spaces
+  # Choose city of interest, use spaces
   # city_name <- "Los Angeles"
-  city_name <- city
+  city_name <- city %>% 
+    str_replace("_", " ")
   
   # Create local city folder to store data
-  path <- here("data", city_name)
+  path <- here("data", city)
   
   if (!dir.exists(path)){
     dir.create(path)
@@ -45,28 +46,25 @@ create_LULC <- function(city, epsg){
     print("dir exists")
   }
   
-  # Use LA AOI for testing purposes
-  # city <- st_read("data/AOI.geojson")
-  
   # Get city geometry
-  city <- cities %>%
-    filter(str_detect(NAME10, city_name))
+  city.geom <- cities %>%
+    filter(str_detect(NAME20, city_name))
 
   # Create bounding box for urban area
   # buffered by 804.672 (half a mile in meters)
   # divide into grid for processing
-  city_bb <- city %>% 
+  city_bb <- city.geom %>% 
     st_buffer(dist = 804.672) %>% 
     st_bbox() 
   
-  city_grid <- city_bb %>% 
-    st_make_grid(cellsize = c(0.3, 0.3), what = "polygons") %>% 
+  city_grid <- city.geom %>% 
+    st_make_grid(cellsize = c(0.15, 0.15), what = "polygons") %>% 
     st_sf() %>% 
-    st_filter(city) %>% 
+    st_filter(city.geom) %>% 
     mutate(ID = row_number())
   
   ggplot() +
-    geom_sf(data = city) +
+    geom_sf(data = city.geom) +
     geom_sf(data = city_grid, fill = NA)
   
   for (i in 1:length(city_grid$ID)){
@@ -74,7 +72,7 @@ create_LULC <- function(city, epsg){
     aoi <- city_grid %>% 
       filter(ID == i) %>% 
       st_as_sf() %>% 
-      st_buffer(dist = 1000) 
+      st_buffer(dist = 100) 
     
     # st_write(aoi, here("data", "aoi_la.shp"))
     
@@ -83,7 +81,7 @@ create_LULC <- function(city, epsg){
     bb_ee <- sf_as_ee(st_as_sfc(bb))
     
     ggplot() +
-      geom_sf(data = city) +
+      geom_sf(data = city.geom) +
       geom_sf(data = aoi, fill = NA)
     
     # ESA Worldcover ----------------------------------------------------------
@@ -137,7 +135,7 @@ create_LULC <- function(city, epsg){
     # esa_rast <- rast(here(path, "ESA_1m.tif"))
     
     # ggplot() +
-    #   geom_sf(data = city) +
+    #   geom_sf(data = city.geom) +
     #   geom_sf(data = test.bb, fill = NA) +
     #   geom_sf(data = open_space)
     
@@ -446,7 +444,7 @@ create_LULC <- function(city, epsg){
     library(osmdata)
     
     # select lines geometries
-    roads <- roads$osm_lines %>% 
+    roads2 <- roads$osm_lines %>% 
       dplyr::select(highway, lanes) %>% 
       mutate(lanes = as.numeric(lanes))
     
@@ -712,7 +710,7 @@ create_LULC <- function(city, epsg){
       
       
       ## Classification of roof slope --------------------------------------------
-      tree <- readRDS(here("data", "tree.rds"))
+      tree <- readRDS(here("data", "building-class-tree.rds"))
       
       pred <- predict(tree, newdata = buildings, type = "class")
       
@@ -1127,26 +1125,32 @@ create_LULC <- function(city, epsg){
     
     LULC <- classify(LULC, reclass)
     
+    lulc.name <- paste0(path, "/", city, "_LULC_1m_V2-", i, ".tif")
+    
     writeRaster(LULC, 
-                here(path, "LULC.tif"), 
-                overwrite = TRUE)
+                # here(path, "LULC.tif"), 
+                lulc.name,
+                overwrite = TRUE,
+                datatype = 'INT1U',
+                gdal = c("BLOCKXSIZE=512", "BLOCKYSIZE=512"))
     
-    # 2. From local to gcs
-    gs_uri <- local_to_gcs(
-      x = here(path, "LULC.tif"),
-      bucket = 'wri-cities-lulc-gee' 
-    )
+    # # 2. From local to gcs
+    # gs_uri <- local_to_gcs(
+    #   # x = here(path, "LULC.tif"),
+    #   lulc.name,
+    #   bucket = 'wri-cities-ssc' 
+    # )
     
-    assetID <- paste0("projects/wri-datalab/cities/SSC/LULC_V2/", city_name, "_LULC_1m_", i)
-    
-    # 3. Create an Image Manifest
-    manifest <- ee_utils_create_manifest_image(gs_uri, assetID)
-    
-    # 4. From GCS to Earth Engine
-    gcs_to_ee_image(
-      manifest = manifest,
-      overwrite = TRUE
-    )
+    # assetID <- paste0("projects/wri-datalab/cities/SSC/LULC_V2/", city_name, "_LULC_1m_", i)
+    # 
+    # # 3. Create an Image Manifest
+    # manifest <- ee_utils_create_manifest_image(gs_uri, assetID)
+    # 
+    # # 4. From GCS to Earth Engine
+    # gcs_to_ee_image(
+    #   manifest = manifest,
+    #   overwrite = TRUE
+    # )
     
     print("LULC raster saved")
     toc()
