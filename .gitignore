@@ -160,7 +160,6 @@ cython_debug/
 #.idea/
 
 # Data files
-/data/
 .Rproj.user
 .Rhistory
 
@@ -169,3 +168,4 @@ cython_debug/
 
 # old files
 /old/
+/data-old/
