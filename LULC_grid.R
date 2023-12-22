@@ -38,7 +38,7 @@ create_LULC <- function(city, epsg){
     str_replace("_", " ")
   
   # Create local city folder to store data
-  path <- here("data", city)
+  path <- here("cities", city)
   
   if (!dir.exists(path)){
     dir.create(path)
@@ -66,6 +66,83 @@ create_LULC <- function(city, epsg){
   ggplot() +
     geom_sf(data = city.geom) +
     geom_sf(data = city_grid, fill = NA)
+  
+  # Road download & avg lane calculation ------------------------------------
+  
+  
+  # Download roads and calculate mean lanes per highway class for the city
+  road_path <- paste0(path, "/roads")
+  dir.create(road_path)
+  
+  road_lanes <- tibble()
+  
+  for (i in 1:length(city_grid$ID)){
+    # Buffer grid cell so there will be overlap
+    aoi <- city_grid %>% 
+      filter(ID == i) %>% 
+      st_as_sf() %>% 
+      st_buffer(dist = 100) 
+    
+    bb <- st_bbox(aoi)
+    
+    # Values from https://taginfo.openstreetmap.org/keys/highway#values
+    # Chosen based on description, excluding footways, etc.
+    # Values w/o descriptions not included
+    
+    # get road lanes data from OSM for gridcell
+    roads_grid <- opq(bb) %>% 
+      add_osm_feature(key = 'highway',
+                      value = c("residential",
+                                "service",
+                                "unclassified",
+                                "tertiary",
+                                "secondary",
+                                "primary",
+                                "turning_circle",
+                                "living_street",
+                                "trunk",
+                                "motorway",
+                                "motorway_link",
+                                "trunk_link",
+                                "primary_link",
+                                "secondary_link",
+                                "tertiary_link",
+                                "motorway_junction",
+                                "turning_loop",
+                                "road",
+                                "mini_roundabout",
+                                "passing_place",
+                                "busway")) %>% 
+      osmdata_sf() %>% 
+      # cast polygons as lines
+      osm_poly2line() %>% 
+      # retain only unique geometries (no overlap in hierarchies)
+      unique_osmdata()
+    
+    # select lines geometries
+    roads_grid <- roads_grid$osm_lines %>% 
+      dplyr::select(highway, lanes) %>% 
+      mutate(lanes = as.numeric(lanes)) 
+    
+    # Save roads vectors to use later
+    roads_grid_file <- paste0(road_path, "/roads_", i, ".geojson")
+    st_write(roads_grid, roads_grid_file, append = FALSE)
+    
+    # Intersect with gridcell so that roads don't get overcounted
+    roads_grid <- roads_grid %>% 
+      st_intersection(aoi)
+    
+    road_lanes <- road_lanes %>% 
+      bind_rows(st_drop_geometry(roads_grid))
+    
+  }
+  
+  # Get the avg number of lanes per highway class
+  lanes <- road_lanes %>% 
+    group_by(highway) %>% 
+    summarize(avg.lanes = ceiling(mean(lanes, na.rm = TRUE))) %>% 
+    mutate(avg.lanes = case_when(is.na(avg.lanes) ~ 2,
+                                 !is.na(avg.lanes) ~ avg.lanes))
   
   for (i in 1:length(city_grid$ID)){
     # Buffer grid cell so there will be overlap
@@ -107,8 +184,9 @@ create_LULC <- function(city, epsg){
     # Green: 1 (Tree, Shrubland, Grassland, Cropland)
     # Built up: 2 (Built up)
     # Barren: 3 (Bare/sparse vegetation, Moss and lichen)
-    # Water: 4 (Snow/ice, Permanent water bodies, Herbaceous wetland, Mangroves)
-    TO <- c(0, 1, 1, 1, 1, 2, 3, 4, 4, 4, 4, 3)
+    # Water: 20 (Snow/ice, Permanent water bodies, Herbaceous wetland, Mangroves)
+    # water code matches eventual landuse code because the category matches
+    TO <- c(0, 1, 1, 1, 1, 2, 3, 20, 20, 20, 20, 3)
     
     esa_city <- esa_city$
       remap(FROM, TO)$
@@ -192,83 +270,37 @@ create_LULC <- function(city, epsg){
       open_space <- open_space$osm_polygons %>% 
         bind_rows(st_cast(open_space$osm_multipolygons, "POLYGON")) 
       
-      open_space <- open_space %>% 
-        st_transform(epsg) %>% 
-        mutate(Value = 10) %>% 
-        select(Value)
-      
-      print("open space combined polygons")
-      
-      open_space %>% 
-        rasterize(esa_rast, 
-                  field = "Value",
-                  background = 0,
-                  filename = here(path, "open_space_1m.tif"),
-                  overwrite = TRUE)
-      
-      rm(open_space)
-      
-      print("Open space raster saved")
-      
     } else if (!is.null(nrow(open_space$osm_polygons)) & is.null(nrow(open_space$osm_multipolygons))){
       # if there are polygons but no multipolygons
       open_space <- open_space$osm_polygons
-      
-      open_space <- open_space %>% 
-        st_transform(epsg) %>% 
-        mutate(Value = 10) %>% 
-        select(Value)
-      
-      print("open space combined polygons")
-      
-      open_space %>% 
-        rasterize(esa_rast, 
-                  field = "Value",
-                  background = 0,
-                  filename = here(path, "open_space_1m.tif"),
-                  overwrite = TRUE)
-      
-      rm(open_space)
-      
-      print("Open space raster saved")
       
     } else if (is.null(nrow(open_space$osm_polygons)) & !is.null(nrow(open_space$osm_multipolygons))){
       # if there are multipolygons but no polygons
       
       open_space <- st_cast(open_space$osm_multipolygons, "POLYGON")
       
-      open_space <- open_space %>% 
-        st_transform(epsg) %>% 
-        mutate(Value = 10) %>% 
-        select(Value)
-      
-      print("open space combined polygons")
-      
-      open_space %>% 
-        rasterize(esa_rast, 
-                  field = "Value",
-                  background = 0,
-                  filename = here(path, "open_space_1m.tif"),
-                  overwrite = TRUE)
-      
-      rm(open_space)
-      
-      print("Open space raster saved")
-      
     } else {
-      # if there are neither create raster of 0s
-      
-      open_space <- esa_rast * 0
-      
-      writeRaster(open_space, 
-                  here(path, "open_space_1m.tif"), 
-                  overwrite = TRUE)
-      
-      rm(open_space)
-      
-      print("Open space raster saved")
+      # if there are neither keep empty geometry
       
     }
+    
+    open_space <- open_space %>% 
+      st_transform(epsg) %>% 
+      mutate(Value = 10) %>% 
+      select(Value)
+    
+    print("open space combined polygons")
+    
+    open_space %>% 
+      rasterize(esa_rast, 
+                field = "Value",
+                background = 0,
+                filename = here(path, "open_space_1m.tif"),
+                overwrite = TRUE)
+    
+    rm(open_space)
+    
+    print("Open space raster saved")
     
     # Water -------------------------------------------------------------------
     
@@ -319,83 +351,40 @@ create_LULC <- function(city, epsg){
       water <- water$osm_polygons %>% 
         bind_rows(st_cast(water$osm_multipolygons, "POLYGON")) 
       
-      water <- water %>% 
-        st_transform(epsg) %>% 
-        mutate(Value = 20) %>% 
-        select(Value)
-      
-      print("water combined polygons")
-      
-      water %>% 
-        rasterize(esa_rast, 
-                  field = "Value",
-                  background = 0,
-                  filename = here(path, "water_1m.tif"),
-                  overwrite = TRUE)
-      
-      rm(water)
-      
-      print("water raster saved")
-      
     } else if (!is.null(nrow(water$osm_polygons)) & is.null(nrow(water$osm_multipolygons))){
       
       water <- water$osm_polygons
-      
-      water <- water %>% 
-        st_transform(epsg) %>% 
-        mutate(Value = 20) %>% 
-        select(Value)
-      
-      print("water combined polygons")
-      
-      water %>% 
-        rasterize(esa_rast, 
-                  field = "Value",
-                  background = 0,
-                  filename = here(path, "water_1m.tif"),
-                  overwrite = TRUE)
-      
-      rm(water)
-      
-      print("water raster saved")
       
     } else if (is.null(nrow(water$osm_polygons)) & !is.null(nrow(water$osm_multipolygons))){
       # if there are multipolygons but no polygons
       
       water <- st_cast(water$osm_multipolygons, "POLYGON")
       
-      water <- water %>% 
-        st_transform(epsg) %>% 
-        mutate(Value = 20) %>% 
-        select(Value)
-      
-      print("open space combined polygons")
-      
-      water %>% 
-        rasterize(esa_rast, 
-                  field = "Value",
-                  background = 0,
-                  filename = here(path, "water_1m.tif"),
-                  overwrite = TRUE)
-      
-      rm(water)
-      
-      print("water raster saved")
-      
     } else {
-      # if there are neither create raster of 0s
+      # if there are neither keep empty geometries
       
-      water <- esa_rast * 0
-      
-      writeRaster(water, 
-                  here(path, "water_1m.tif"), 
-                  overwrite = TRUE)
-      
-      rm(water)
-      
-      print("water raster saved")
+      water <- water$osm_polygons
       
     }
+    
+    water <- water %>% 
+      st_transform(epsg) %>% 
+      mutate(Value = 20) %>% 
+      select(Value)
+    
+    print("open space combined polygons")
+    
+    water %>% 
+      rasterize(esa_rast, 
+                field = "Value",
+                background = 0,
+                filename = here(path, "water_1m.tif"),
+                overwrite = TRUE)
+    
+    rm(water)
+    
+    print("water raster saved")
+    
     
     toc()
     
@@ -403,61 +392,14 @@ create_LULC <- function(city, epsg){
     
     tic("Roads")
     
-    ## Get OSM roads data ----------------------------------------------------------------
+    ## Load roads data ----------------------------------------------------------------
     
-    # Values from https://taginfo.openstreetmap.org/keys/highway#values
-    # Chosen based on description, excluding footways, etc.
-    # Values w/o descriptions not included
+    roads_grid_file <- paste0(road_path, "/roads_", i, ".geojson")
     
-    # get roads from OSM
-    get_roads <- function(bb){
-      opq(bb) %>% 
-        add_osm_feature(key = 'highway',
-                        value = c("residential",
-                                  "service",
-                                  "unclassified",
-                                  "tertiary",
-                                  "secondary",
-                                  "primary",
-                                  "turning_circle",
-                                  "living_street",
-                                  "trunk",
-                                  "motorway",
-                                  "motorway_link",
-                                  "trunk_link",
-                                  "primary_link",
-                                  "secondary_link",
-                                  "tertiary_link",
-                                  "motorway_junction",
-                                  "turning_loop",
-                                  "road",
-                                  "mini_roundabout",
-                                  "passing_place",
-                                  "busway")) %>% 
-        osmdata_sf() 
-    }
-    
-    roads <- retry(get_roads(bb), when = "runtime error")
-    print("roads osm")
-    
-    unloadNamespace("osmdata")
-    library(osmdata)
-    
-    # select lines geometries
-    roads2 <- roads$osm_lines %>% 
-      dplyr::select(highway, lanes) %>% 
-      mutate(lanes = as.numeric(lanes))
-    
+    roads <- st_read(roads_grid_file)
     
     ## Tidy --------------------------------------------------------------------
     
-    # Get the avg number of lanes per highway class
-    lanes <- roads %>% 
-      st_drop_geometry() %>% 
-      group_by(highway) %>% 
-      summarize(avg.lanes = ceiling(mean(lanes, na.rm = TRUE))) %>% 
-      mutate(avg.lanes = case_when(is.na(avg.lanes) ~ 2,
-                                   !is.na(avg.lanes) ~ avg.lanes))
     
     # Fill lanes with avg lane value when missing
     roads <- roads %>% 
@@ -518,21 +460,14 @@ create_LULC <- function(city, epsg){
       reduce(ee$Reducer$firstNonNull())$
       rename('lulc')
     
-    roads <- ee$ImageCollection('projects/wri-datalab/cities/urban_land_use/V1')$ 
-      filterBounds(bb_ee)$
-      select('road')$
-      reduce(ee$Reducer$firstNonNull())$
-      rename('lulc')
+    # If there is no ULU data for a gridcell, create a raster of 0s
     
-    # Create road mask
-    # Typical threshold for creating road mask
-    road_prob <- 50
-    road_mask <- roads$
-      updateMask(roads$gte(road_prob))$
-      where(roads, 1)
-    
-    ulu <- ulu$
-      where(road_mask, 6)
+    tryCatch(ee_print(ulu), 
+             error = function(e) 
+               {ulu <<- ee$Image(0)$ 
+                 clip(bb_ee)$
+                 rename('lulc')
+             return(ulu)})
     
     # Reclassify raster to combine lulc types
     # 0-Open space 
@@ -543,23 +478,15 @@ create_LULC <- function(city, epsg){
     # 5-Housing project 
     # 6-Roads
     
-    FROM = c(0, 1, 2, 3, 4, 5, 6)
+    FROM = c(0, 1, 2, 3, 4, 5)
     
-    # 1-Non-residential: 0 (open space), 1 (non-res)
+    # 0-Unclassified: 0 (open space)
+    # 1-Non-residential: 1 (non-res)
     # 2-Residential: 2 (Atomistic), 3 (Informal), 4 (Formal), 5 (Housing project)
-    # 3-Roads: 6 (Roads)
     
-    TO = c(1, 1, 2, 2, 2, 2, 3)
+    TO = c(0, 1, 2, 2, 2, 2)
     
     ulu = ulu$remap(FROM, TO)
-    
-    # if there is no ULU data, skip to the next iteration
-      
-    skip_to_next <- FALSE
-    
-    tryCatch(ee_print(ulu), error = function(e) {skip_to_next <<- TRUE})
-    
-    if(skip_to_next) { next }  
     
     # Download from Google Drive to city folder
     ulu_img <- ee_as_rast(ulu,
@@ -626,371 +553,134 @@ create_LULC <- function(city, epsg){
     unloadNamespace("osmdata")
     library(osmdata)
     
-    # if there are polygons but no multipolygons
+    # if there are polygons & multipolygons
     if (!is.null(nrow(buildings$osm_polygons)) & !is.null(nrow(buildings$osm_multipolygons))){
-      # if there are polygons & multipolygons
-      
       buildings <- buildings$osm_polygons %>% 
         bind_rows(st_cast(buildings$osm_multipolygons, "POLYGON")) 
-      
-      # drop excess fields
-      buildings <- buildings %>% 
-        select(osm_id)
-      
-      ## Extract ULU to buildings ------------------------------------------------
-      
-      # Reproject buildings to match ULU
-      buildings <- buildings %>% 
-        st_transform(crs = st_crs(ulu))
-      
-      print("buildings reproject")
-      
-      # Extract values to buildings using exact_extract, as coverage fractions
-      # https://github.com/isciences/exactextractr
-      build_ulu <- exactextractr::exact_extract(ulu, 
-                                                buildings, 
-                                                'frac',
-                                                force_df = TRUE) 
-      
-      print("buildings ulu extract")
-      
-      # Assign the max coverage class to the building if it is not roads,
-      # If the max class is roads assign the minority class
-      # If the max class is roads, and there is no minority class, assign non-residential
-      build_ulu <- build_ulu %>% 
-        mutate(ID = row_number()) %>% 
-        pivot_longer(cols = starts_with("frac"), 
-                     names_to = "ULU", 
-                     values_to = "coverage") %>% 
-        mutate(ULU = as.integer(str_sub(ULU, start = -1))) %>% 
-        group_by(ID) %>% 
-        arrange(coverage, .by_group = TRUE) %>% 
-        summarise(ULU = case_when(
-          # When the majority class is not roads (3), return the majority class
-          last(ULU) != 3 ~ last(ULU),
-          # When the majority class is roads, return the second majority class
-          last(ULU) == 3 & nth(coverage, -2L) != 0 ~ nth(ULU, -2L),
-          # When the majority ULU is roads (3) & there is no minority class, use ULU 1 (non-res)
-          last(ULU) == 3 & nth(coverage, -2L) == 0 ~ 1)) %>% 
-        ungroup() 
-      
-      buildings <- buildings %>% 
-        add_column(ULU = build_ulu$ULU)
-      
-      print("buildings ulu class")
-      
-      toc()
-      
-      # Reproject buildings to match ANBH
-      buildings <- buildings %>% 
-        st_transform(crs = st_crs(anbh))
-      
-      # Extract average of pixel values to buildings
-      # Mean value of cells that intersect the polygon, 
-      # weighted by the fraction of the cell that is covered.
-      avg_ht <- exactextractr::exact_extract(anbh, 
-                                             buildings, 
-                                             'mean')
-      
-      buildings <- buildings %>% 
-        add_column(ANBH = avg_ht)
-      
-      print("buildings anbh")
-      
-      toc()
-      
-      ## Tidy ---------------------------------------------------------------
-      
-      # Reproject to local state plane and calculate area
-      buildings <- buildings %>% 
-        st_transform(epsg) %>% 
-        mutate(Area_m = as.numeric(st_area(.)))
-      
-      print("buildings reproject")
-      
-      
-      ## Classification of roof slope --------------------------------------------
-      tree <- readRDS(here("data", "building-class-tree.rds"))
-      
-      pred <- predict(tree, newdata = buildings, type = "class")
-      
-      buildings <- buildings %>% 
-        add_column(Slope = pred) 
-      
-      # add value field, low slope = 41, high slope = 42
-      buildings <- buildings %>% 
-        mutate(Value = case_when(Slope == "low" ~ 41,
-                                 Slope == "high" ~ 42)) %>% 
-        select(Value)
-      
-      print("buildings reclass")
-      
-      
-      ## Rasterize ---------------------------------------------------------------
-      
-      # Rasterize to match grid of esa and save raster
-      buildings %>% rasterize(esa_rast, 
-                              field = "Value",
-                              background = 0,
-                              filename = here(path, "buildings_1m.tif"),
-                              overwrite = TRUE)
-      
-      # rm(buildings)
-      
-      print("Buildings raster saved")
-      toc()
-      
+    
+    # if there are polygons but no multipolygons
     } else if (!is.null(nrow(buildings$osm_polygons)) & is.null(nrow(buildings$osm_multipolygons))){
-      # if there are polygons but no multipolygons
-      
-      buildings <- buildings$osm_polygons
-      
-      # # Combine polygons and multipolygons
-      # buildings <- buildings$osm_polygons %>% 
-      #   bind_rows(st_cast(buildings$osm_multipolygons, "POLYGON"))
-      
-      # drop excess fields
-      buildings <- buildings %>% 
-        select(osm_id)
-      
-      ## Extract ULU to buildings ------------------------------------------------
-      
-      # Reproject buildings to match ULU
-      buildings <- buildings %>% 
-        st_transform(crs = st_crs(ulu))
-      
-      print("buildings reproject")
-      
-      # Extract values to buildings using exact_extract, as coverage fractions
-      # https://github.com/isciences/exactextractr
-      build_ulu <- exactextractr::exact_extract(ulu, buildings, 'frac') 
-      
-      print("buildings ulu extract")
-      
-      # Assign the max coverage class to the building if it is not roads,
-      # If the max class is roads assign the minority class
-      # If the max class is roads, and there is no minority class, assign non-residential
-      build_ulu <- build_ulu %>% 
-        mutate(ID = row_number()) %>% 
-        pivot_longer(cols = starts_with("frac"), 
-                     names_to = "ULU", 
-                     values_to = "coverage") %>% 
-        mutate(ULU = as.integer(str_sub(ULU, start = -1))) %>% 
-        group_by(ID) %>% 
-        arrange(coverage, .by_group = TRUE) %>% 
-        summarise(ULU = case_when(
-          # When the majority class is not roads (3), return the majority class
-          last(ULU) != 3 ~ last(ULU),
-          # When the majority class is roads, return the second majority class
-          last(ULU) == 3 & nth(coverage, -2L) != 0 ~ nth(ULU, -2L),
-          # When the majority ULU is roads (3) & there is no minority class, use ULU 1 (non-res)
-          last(ULU) == 3 & nth(coverage, -2L) == 0 ~ 1)) %>% 
-        ungroup() 
-      
-      buildings <- buildings %>% 
-        add_column(ULU = build_ulu$ULU)
-      
-      print("buildings ulu class")
-      
-      toc()
-      
-      ## Average building height from the global human settlement layer ----------
-      
-      # Reproject buildings to match ANBH
-      buildings <- buildings %>% 
-        st_transform(crs = st_crs(anbh))
-      
-      # Extract average of pixel values to buildings
-      # Mean value of cells that intersect the polygon, 
-      # weighted by the fraction of the cell that is covered.
-      avg_ht <- exactextractr::exact_extract(anbh, buildings, 'mean')
-      
-      buildings <- buildings %>% 
-        add_column(ANBH = avg_ht)
-      
-      print("buildings anbh")
-      
-      toc()
-      
-      ## Tidy ---------------------------------------------------------------
-      
-      # Reproject to local state plane and calculate area
-      buildings <- buildings %>% 
-        st_transform(epsg) %>% 
-        mutate(Area_m = as.numeric(st_area(.)))
-      
-      print("buildings reproject")
-      
-      
-      ## Classification of roof slope --------------------------------------------
-      tree <- readRDS(here("data", "tree.rds"))
-      
-      pred <- predict(tree, newdata = buildings, type = "class")
-      
-      buildings <- buildings %>% 
-        add_column(Slope = pred) 
-      
-      # add value field, low slope = 41, high slope = 42
-      buildings <- buildings %>% 
-        mutate(Value = case_when(Slope == "low" ~ 41,
-                                 Slope == "high" ~ 42)) %>% 
-        select(Value)
-      
-      print("buildings reclass")
-      
-      
-      ## Rasterize ---------------------------------------------------------------
-      
-      # Rasterize to match grid of esa and save raster
-      buildings %>% rasterize(esa_rast, 
-                              field = "Value",
-                              background = 0,
-                              filename = here(path, "buildings_1m.tif"),
-                              overwrite = TRUE)
-      
-      # rm(buildings)
-      
-      print("Buildings raster saved")
-      toc()
-      
+      buildings <- buildings$osm_polygons 
+    
+    # if there are multipolygons but no polygons
     } else if (is.null(nrow(buildings$osm_polygons)) & !is.null(nrow(buildings$osm_multipolygons))){
-      # if there are multipolygons but no polygons
-      
       buildings <- st_cast(buildings$osm_multipolygons, "POLYGON")
+    
+    # if there are no buildings use empty vector dataset
+    # else {buildings <- esa_rast * 0}
+    } else {buildings <- buildings$osm_polygons}
       
-      # # Combine polygons and multipolygons
-      # buildings <- buildings$osm_polygons %>% 
-      #   bind_rows(st_cast(buildings$osm_multipolygons, "POLYGON"))
+    # drop excess fields
+    buildings <- buildings %>% 
+      select(osm_id)
       
-      # drop excess fields
-      buildings <- buildings %>% 
-        select(osm_id)
+    ## Extract ULU to buildings ------------------------------------------------
+    
+    # Reproject buildings to match ULU
+    buildings <- buildings %>% 
+      st_transform(crs = st_crs(ulu))
+    
+    print("buildings reproject")
+    
+    # Extract values to buildings using exact_extract, as coverage fractions
+    # https://github.com/isciences/exactextractr
+    build_ulu <- exactextractr::exact_extract(ulu, 
+                                              buildings, 
+                                              'frac',
+                                              force_df = TRUE) 
+    
+    print("buildings ulu extract")
       
-      ## Extract ULU to buildings ------------------------------------------------
+    # Assign the max coverage class to the buildings
+    build_ulu <- build_ulu %>% 
+      mutate(ID = row_number()) %>% 
+      pivot_longer(cols = starts_with("frac"), 
+                   names_to = "ULU", 
+                   values_to = "coverage") %>% 
+      mutate(ULU = as.integer(str_sub(ULU, start = -1))) %>% 
+      group_by(ID) %>% 
+      arrange(coverage, .by_group = TRUE) %>% 
+      top_n(n = 1) %>% 
+      ungroup() %>% 
+      arrange(ID)
       
-      # Reproject buildings to match ULU
-      buildings <- buildings %>% 
-        st_transform(crs = st_crs(ulu))
+    buildings <- buildings %>% 
+      add_column(ULU = build_ulu$ULU)
+    
+    print("buildings ulu class")
+    
+    toc()
       
-      print("buildings reproject")
-      
-      # Extract values to buildings using exact_extract, as coverage fractions
-      # https://github.com/isciences/exactextractr
-      build_ulu <- exactextractr::exact_extract(ulu, buildings, 'frac') 
-      
-      print("buildings ulu extract")
-      
-      # Assign the max coverage class to the building if it is not roads,
-      # If the max class is roads assign the minority class
-      # If the max class is roads, and there is no minority class, assign non-residential
-      build_ulu <- build_ulu %>% 
-        mutate(ID = row_number()) %>% 
-        pivot_longer(cols = starts_with("frac"), 
-                     names_to = "ULU", 
-                     values_to = "coverage") %>% 
-        mutate(ULU = as.integer(str_sub(ULU, start = -1))) %>% 
-        group_by(ID) %>% 
-        arrange(coverage, .by_group = TRUE) %>% 
-        summarise(ULU = case_when(
-          # When the majority class is not roads (3), return the majority class
-          last(ULU) != 3 ~ last(ULU),
-          # When the majority class is roads, return the second majority class
-          last(ULU) == 3 & nth(coverage, -2L) != 0 ~ nth(ULU, -2L),
-          # When the majority ULU is roads (3) & there is no minority class, use ULU 1 (non-res)
-          last(ULU) == 3 & nth(coverage, -2L) == 0 ~ 1)) %>% 
-        ungroup() 
-      
-      buildings <- buildings %>% 
-        add_column(ULU = build_ulu$ULU)
-      
-      print("buildings ulu class")
-      
-      toc()
-      
-      ## Average building height from the global human settlement layer ----------
-      
-      tic("ANBH")
-      
-      # Reproject buildings to match ANBH
-      buildings <- buildings %>% 
-        st_transform(crs = st_crs(anbh))
-      
-      # Extract average of pixel values to buildings
-      # Mean value of cells that intersect the polygon, 
-      # weighted by the fraction of the cell that is covered.
-      avg_ht <- exactextractr::exact_extract(anbh, buildings, 'mean')
-      
-      buildings <- buildings %>% 
-        add_column(ANBH = avg_ht)
-      
-      print("buildings anbh")
-      
-      toc()
-      
-      ## Tidy ---------------------------------------------------------------
-      
-      # Reproject to local state plane and calculate area
-      buildings <- buildings %>% 
-        st_transform(epsg) %>% 
-        mutate(Area_m = as.numeric(st_area(.)))
-      
-      print("buildings reproject")
-      
-      
-      ## Classification of roof slope --------------------------------------------
-      tree <- readRDS(here("data", "tree.rds"))
-      
-      pred <- predict(tree, newdata = buildings, type = "class")
-      
-      buildings <- buildings %>% 
-        add_column(Slope = pred) 
-      
-      # add value field, low slope = 41, high slope = 42
-      buildings <- buildings %>% 
-        mutate(Value = case_when(Slope == "low" ~ 41,
-                                 Slope == "high" ~ 42)) %>% 
-        select(Value)
-      
-      print("buildings reclass")
-      
-      
-      ## Rasterize ---------------------------------------------------------------
-      
-      # Rasterize to match grid of esa and save raster
-      buildings %>% rasterize(esa_rast, 
-                              field = "Value",
-                              background = 0,
-                              filename = here(path, "buildings_1m.tif"),
-                              overwrite = TRUE)
-      
-      # rm(buildings)
-      
-      print("Buildings raster saved")
-      toc()
-      
-      
-    } else {
-      # if there are neither create raster of 0s
-      
-      buildings <- esa_rast * 0
-      
-      writeRaster(buildings, 
-                  here(path, "buildings_1m.tif"), 
-                  overwrite = TRUE)
-      
-      rm(buildings)
-      
-      print("buildings raster saved")
-      
-    }
+    # Reproject buildings to match ANBH
+    buildings <- buildings %>% 
+      st_transform(crs = st_crs(anbh))
+    
+    # Extract average of pixel values to buildings
+    # Mean value of cells that intersect the polygon, 
+    # weighted by the fraction of the cell that is covered.
+    avg_ht <- exactextractr::exact_extract(anbh, 
+                                           buildings, 
+                                           'mean')
+    
+    buildings <- buildings %>% 
+      add_column(ANBH = avg_ht)
+    
+    print("buildings anbh")
+    
+    toc()
+    
+    ## Tidy ---------------------------------------------------------------
+    
+    # Reproject to local state plane and calculate area
+    buildings <- buildings %>% 
+      st_transform(epsg) %>% 
+      mutate(Area_m = as.numeric(st_area(.)))
+    
+    print("buildings reproject")
     
     
+    ## Classification of roof slope --------------------------------------------
+    tree <- readRDS(here("data", "building-class-tree.rds"))
+    
+    pred <- predict(tree, newdata = buildings, type = "class")
+    
+    buildings <- buildings %>% 
+      add_column(Slope = pred) 
+    
+    buildings <- buildings %>% 
+      mutate(Class = case_when(ULU == 0 ~ "unclassified",
+                               ULU == 1 ~ "non-residential",
+                               ULU == 2 ~ "residential",
+                               is.na(ULU) ~ "unclassified"),
+             Value = case_when(Class == "unclassified" ~ 44,
+                               Class == "non-residential" & Slope == "low" ~ 43,
+                               Class == "residential" & Slope == "low" ~ 42,
+                               Class == "non-residential" & Slope == "high" ~ 41,
+                               Class == "residential" & Slope == "high" ~ 40)) %>% 
+      select(Value)
+    
+    print("buildings reclass")
+    
+    
+    ## Rasterize ---------------------------------------------------------------
+    
+    # Rasterize to match grid of esa and save raster
+    buildings %>% rasterize(esa_rast, 
+                            field = "Value",
+                            background = 0,
+                            filename = here(path, "buildings_1m.tif"),
+                            overwrite = TRUE)
+    
+    # rm(buildings)
+    
+    print("Buildings raster saved")
+    toc()
     
     # Parking -----------------------------------------------------------------
     
     tic("Parking")
     
-    # get open space from OSM
+    # get parking from OSM
     get_parking1 <- function(bb){
       opq(bb) %>% 
         add_osm_feature(key = 'amenity',
@@ -1019,86 +709,30 @@ create_LULC <- function(city, epsg){
     if (!is.null(nrow(parking$osm_polygons)) & !is.null(nrow(parking$osm_multipolygons))){
       # if there are polygons & multipolygons
       parking <- parking$osm_polygons %>% 
-        bind_rows(st_cast(parking$osm_multipolygons, "POLYGON")) 
-      
-      parking <- parking %>% 
-        st_transform(epsg) %>% 
-        mutate(Value = 50) %>% 
-        select(Value)
-      
-      print("parking combined polygons")
-      
-      parking %>% 
-        rasterize(esa_rast, 
-                  field = "Value",
-                  background = 0,
-                  filename = here(path, "parking_1m.tif"),
-                  overwrite = TRUE)
-      
-      rm(parking)
-      
-      print("parking raster saved")
+        bind_rows(st_cast(parking$osm_multipolygons, "POLYGON"))
       
     } else if (!is.null(nrow(parking$osm_polygons)) & is.null(nrow(parking$osm_multipolygons))){
       
       parking <- parking$osm_polygons
-      
-      parking <- parking %>% 
-        st_transform(epsg) %>% 
-        mutate(Value = 50) %>% 
-        select(Value)
-      
-      print("parking combined polygons")
-      
-      parking %>% 
-        rasterize(esa_rast, 
-                  field = "Value",
-                  background = 0,
-                  filename = here(path, "parking_1m.tif"),
-                  overwrite = TRUE)
-      
-      rm(parking)
-      
-      print("parking raster saved")
       
     } else if (is.null(nrow(parking$osm_polygons)) & !is.null(nrow(parking$osm_multipolygons))){
       # if there are multipolygons but no polygons
       
       parking <- st_cast(parking$osm_multipolygons, "POLYGON")
       
-      parking <- parking %>% 
-        st_transform(epsg) %>% 
-        mutate(Value = 50) %>% 
-        select(Value)
-      
-      print("parking combined polygons")
-      
-      parking %>% 
-        rasterize(esa_rast, 
-                  field = "Value",
-                  background = 0,
-                  filename = here(path, "parking_1m.tif"),
-                  overwrite = TRUE)
-      
-      rm(parking)
-      
-      print("parking raster saved")
-      
     } else {
       # if there are neither create raster of 0s
       
-      parking <- esa_rast * 0
-      
-      writeRaster(parking, 
-                  here(path, "parking_1m.tif"), 
-                  overwrite = TRUE)
-      
-      rm(parking)
-      
-      print("Open space raster saved")
-      
+      parking <- parking$osm_polygons
     }
     
+    writeRaster(parking, 
+                here(path, "parking_1m.tif"), 
+                overwrite = TRUE)
+    
+    rm(parking)
+    
+    print("Parking raster saved")
     
     toc()
     
