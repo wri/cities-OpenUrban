@@ -1,6 +1,6 @@
 
 # Create LULC dataset for city --------------------------------------------
-library(tictoc)
+
 library(here)
 library(tidyverse)
 library(sf)
@@ -26,7 +26,7 @@ ee_Initialize("ejwesley", drive = TRUE, gcs = TRUE)
 # epsg = state plane EPSG for city
 
 create_LULC <- function(city, epsg){
-  tic("Total function run time:")
+
   # City boundary -----------------------------------------------------------
   
   # Load metro area boundaries
@@ -63,16 +63,21 @@ create_LULC <- function(city, epsg){
     st_filter(city.geom) %>% 
     mutate(ID = row_number())
   
-  ggplot() +
-    geom_sf(data = city.geom) +
-    geom_sf(data = city_grid, fill = NA)
+  # ggplot() +
+  #   geom_sf(data = city.geom) +
+  #   geom_sf(data = city_grid, fill = NA)
   
   # Road download & avg lane calculation ------------------------------------
   
   
   # Download roads and calculate mean lanes per highway class for the city
   road_path <- paste0(path, "/roads")
-  dir.create(road_path)
+  
+  if (!dir.exists(road_path)){
+    dir.create(road_path)
+  } else{
+    print("dir exists")
+  }
   
   road_lanes <- tibble()
   
@@ -80,8 +85,7 @@ create_LULC <- function(city, epsg){
     # Buffer grid cell so there will be overlap
     aoi <- city_grid %>% 
       filter(ID == i) %>% 
-      st_as_sf() %>% 
-      st_buffer(dist = 100) 
+      st_as_sf() 
     
     bb <- st_bbox(aoi)
     
@@ -121,21 +125,33 @@ create_LULC <- function(city, epsg){
     
     # select lines geometries
     roads_grid <- roads_grid$osm_lines %>% 
-      dplyr::select(highway, lanes) %>% 
-      mutate(lanes = as.numeric(lanes)) 
+      dplyr::select(any_of(c("highway", "lanes"))) %>% 
+      # an inline anonymous function to add the needed columns
+      (function(.df){
+        cls <- c("lanes") # columns I need
+        # adding cls columns with NAs if not present in the piped data.frame
+        .df[cls[!(cls %in% colnames(.df))]] = NA
+        return(.df)
+      }) %>% 
+      mutate(lanes = as.numeric(lanes))
     
     # Save roads vectors to use later
     roads_grid_file <- paste0(road_path, "/roads_", i, ".geojson")
-    st_write(roads_grid, roads_grid_file, append = FALSE)
-    
-    # Intersect with gridcell so that roads don't get overcounted
-    roads_grid <- roads_grid %>% 
-      st_intersection(aoi)
+    st_write(obj = roads_grid, 
+             dsn = roads_grid_file, 
+             append = FALSE,
+             delete_dsn = TRUE)
     
     road_lanes <- road_lanes %>% 
       bind_rows(st_drop_geometry(roads_grid))
     
   }
+  
+  road_lanes <- list.files(here(road_path), full.names = TRUE) %>%
+    map(\(x) st_read(x) %>% 
+          mutate(lanes = as.numeric(lanes))) %>%
+    reduce(bind_rows) %>% 
+    st_drop_geometry()
   
   # Get the avg number of lanes per highway class
   lanes <- road_lanes %>% 
@@ -143,6 +159,10 @@ create_LULC <- function(city, epsg){
     summarize(avg.lanes = ceiling(mean(lanes, na.rm = TRUE))) %>% 
     mutate(avg.lanes = case_when(is.na(avg.lanes) ~ 2,
                                  !is.na(avg.lanes) ~ avg.lanes))
+  
+
+  # Iterate over grid -------------------------------------------------------
+
   
   for (i in 1:length(city_grid$ID)){
     # Buffer grid cell so there will be overlap
@@ -157,13 +177,11 @@ create_LULC <- function(city, epsg){
     
     bb_ee <- sf_as_ee(st_as_sfc(bb))
     
-    ggplot() +
-      geom_sf(data = city.geom) +
-      geom_sf(data = aoi, fill = NA)
+    # ggplot() +
+    #   geom_sf(data = city.geom) +
+    #   geom_sf(data = aoi, fill = NA)
     
     # ESA Worldcover ----------------------------------------------------------
-    
-    tic("ESA land cover")
     
     # Read ESA land cover (2021)
     esa <- ee$ImageCollection('ESA/WorldCover/v200')
@@ -208,7 +226,6 @@ create_LULC <- function(city, epsg){
                   overwrite = TRUE)
     
     print("ESA raster saved")
-    toc()
     
     # esa_rast <- rast(here(path, "ESA_1m.tif"))
     
@@ -219,7 +236,6 @@ create_LULC <- function(city, epsg){
     
     # Open space --------------------------------------------------------------
     
-    tic("Open space")
     
     ## Get OSM open space data -------------------------------------------------
     
@@ -281,13 +297,22 @@ create_LULC <- function(city, epsg){
       
     } else {
       # if there are neither keep empty geometry
-      
+      open_space <- open_space$osm_polygons
     }
     
-    open_space <- open_space %>% 
-      st_transform(epsg) %>% 
-      mutate(Value = 10) %>% 
-      select(Value)
+    if (!is.null(open_space)){
+      open_space <- open_space %>% 
+        st_transform(epsg) %>% 
+        mutate(Value = 10) %>% 
+        select(Value)
+    } else {
+      open_space <- bb %>% 
+        st_as_sfc() %>% 
+        st_as_sf() %>% 
+        st_transform(epsg) %>% 
+        mutate(Value = 0) %>% 
+        select(Value)
+    }
     
     print("open space combined polygons")
     
@@ -303,8 +328,6 @@ create_LULC <- function(city, epsg){
     print("Open space raster saved")
     
     # Water -------------------------------------------------------------------
-    
-    tic("Water")
     
     ## Get OSM water data --------------------------------------------------------------
     
@@ -352,27 +375,33 @@ create_LULC <- function(city, epsg){
         bind_rows(st_cast(water$osm_multipolygons, "POLYGON")) 
       
     } else if (!is.null(nrow(water$osm_polygons)) & is.null(nrow(water$osm_multipolygons))){
-      
       water <- water$osm_polygons
       
     } else if (is.null(nrow(water$osm_polygons)) & !is.null(nrow(water$osm_multipolygons))){
       # if there are multipolygons but no polygons
-      
       water <- st_cast(water$osm_multipolygons, "POLYGON")
       
     } else {
       # if there are neither keep empty geometries
-      
       water <- water$osm_polygons
       
     }
     
-    water <- water %>% 
-      st_transform(epsg) %>% 
-      mutate(Value = 20) %>% 
-      select(Value)
+    if (!is.null(water)){
+      water <- water %>% 
+        st_transform(epsg) %>% 
+        mutate(Value = 20) %>% 
+        select(Value)
+    } else {
+      water <- bb %>% 
+        st_as_sfc() %>% 
+        st_as_sf() %>% 
+        st_transform(epsg) %>% 
+        mutate(Value = 0) %>% 
+        select(Value)
+    }
     
-    print("open space combined polygons")
+    print("water combined polygons")
     
     water %>% 
       rasterize(esa_rast, 
@@ -386,11 +415,9 @@ create_LULC <- function(city, epsg){
     print("water raster saved")
     
     
-    toc()
     
     # Roads -------------------------------------------------------------------
     
-    tic("Roads")
     
     ## Load roads data ----------------------------------------------------------------
     
@@ -403,6 +430,7 @@ create_LULC <- function(city, epsg){
     
     # Fill lanes with avg lane value when missing
     roads <- roads %>% 
+      mutate(lanes = as.numeric(lanes)) %>% 
       left_join(lanes, by = "highway") %>% 
       mutate(lanes = coalesce(lanes, avg.lanes))
     
@@ -443,15 +471,13 @@ create_LULC <- function(city, epsg){
     rm(roads)
     
     print("Roads raster saved")
-    toc()
+
     
     # Buildings -------------------------------------------------------------------
     
-    tic("Buildings")
     
     ## Get ULU data ---------------------------------------------------
     
-    tic("ULU")
     
     # Read ULU land cover, filter to city, select lulc band
     ulu <- ee$ImageCollection('projects/wri-datalab/cities/urban_land_use/V1')$ 
@@ -510,7 +536,6 @@ create_LULC <- function(city, epsg){
     
     ## Average building height from the global human settlement layer ----------
     
-    tic("ANBH")
     
     # ANBH is the average height of the built surfaces, USE THIS
     # AGBH is the amount of built cubic meters per surface unit in the cell
@@ -568,7 +593,16 @@ create_LULC <- function(city, epsg){
     
     # if there are no buildings use empty vector dataset
     # else {buildings <- esa_rast * 0}
-    } else {buildings <- buildings$osm_polygons}
+    } else {
+      buildings <- buildings$osm_polygons
+    }
+    
+    if (is.null(buildings)){
+      buildings <- bb %>% 
+        st_as_sfc() %>% 
+        st_as_sf() %>% 
+        mutate(osm_id = NULL)
+    }
       
     # drop excess fields
     buildings <- buildings %>% 
@@ -599,8 +633,8 @@ create_LULC <- function(city, epsg){
                    values_to = "coverage") %>% 
       mutate(ULU = as.integer(str_sub(ULU, start = -1))) %>% 
       group_by(ID) %>% 
-      arrange(coverage, .by_group = TRUE) %>% 
-      top_n(n = 1) %>% 
+      arrange(desc(coverage), .by_group = TRUE) %>% 
+      slice_head() %>% 
       ungroup() %>% 
       arrange(ID)
       
@@ -609,7 +643,6 @@ create_LULC <- function(city, epsg){
     
     print("buildings ulu class")
     
-    toc()
       
     # Reproject buildings to match ANBH
     buildings <- buildings %>% 
@@ -627,7 +660,6 @@ create_LULC <- function(city, epsg){
     
     print("buildings anbh")
     
-    toc()
     
     ## Tidy ---------------------------------------------------------------
     
@@ -674,11 +706,10 @@ create_LULC <- function(city, epsg){
     # rm(buildings)
     
     print("Buildings raster saved")
-    toc()
+
     
     # Parking -----------------------------------------------------------------
     
-    tic("Parking")
     
     # get parking from OSM
     get_parking1 <- function(bb){
@@ -726,19 +757,34 @@ create_LULC <- function(city, epsg){
       parking <- parking$osm_polygons
     }
     
-    writeRaster(parking, 
-                here(path, "parking_1m.tif"), 
-                overwrite = TRUE)
+    if (!is.null(parking)){
+      parking <- parking %>% 
+        st_transform(epsg) %>% 
+        mutate(Value = 50) %>% 
+        select(Value)
+    } else {
+      parking <- bb %>% 
+        st_as_sfc() %>% 
+        st_as_sf() %>% 
+        st_transform(epsg) %>% 
+        mutate(Value = 0) %>% 
+        select(Value)
+    }
     
-    rm(parking)
+    
+    
+    # Rasterize ---------------------------------------------------------------
+    
+    # Rasterize to match grid of esa and save raster
+    parking %>% rasterize(esa_rast, 
+                            field = "Value",
+                            background = 0,
+                            filename = here(path, "parking_1m.tif"),
+                            overwrite = TRUE)
     
     print("Parking raster saved")
     
-    toc()
-    
     # Combine rasters ---------------------------------------------------------
-    
-    tic("Combine rasters")
     
     open_space_rast <- rast(here(path, "open_space_1m.tif"))
     roads_rast <- rast(here(path, "roads_1m.tif"))
@@ -754,41 +800,39 @@ create_LULC <- function(city, epsg){
                 parking_rast)
     
     # Reclass ESA water (4) to 20
-    reclass <- cbind(from = c(1, 2, 3, 4, 10, 20, 30, 41, 42, 50),
-                     to = c(1, 2, 3, 20, 10, 20, 30, 41, 42, 50))
+    # reclass <- cbind(from = c(1, 2, 3, 10, 20, 30, 41, 42, 50),
+    #                  to = c(1, 2, 3, 10, 20, 30, 41, 42, 50))
     
-    LULC <- classify(LULC, reclass)
+    # LULC <- classify(LULC, reclass)
     
     lulc.name <- paste0(path, "/", city, "_LULC_1m_V2-", i, ".tif")
     
-    writeRaster(LULC, 
-                # here(path, "LULC.tif"), 
-                lulc.name,
+    writeRaster(x = LULC, 
+                filename = here(path, "LULC.tif"),
+                # lulc.name,
                 overwrite = TRUE,
                 datatype = 'INT1U',
                 gdal = c("BLOCKXSIZE=512", "BLOCKYSIZE=512"))
     
-    # # 2. From local to gcs
-    # gs_uri <- local_to_gcs(
-    #   # x = here(path, "LULC.tif"),
-    #   lulc.name,
-    #   bucket = 'wri-cities-ssc' 
-    # )
-    
-    # assetID <- paste0("projects/wri-datalab/cities/SSC/LULC_V2/", city_name, "_LULC_1m_", i)
-    # 
-    # # 3. Create an Image Manifest
-    # manifest <- ee_utils_create_manifest_image(gs_uri, assetID)
-    # 
-    # # 4. From GCS to Earth Engine
-    # gcs_to_ee_image(
-    #   manifest = manifest,
-    #   overwrite = TRUE
-    # )
+    # 2. From local to gcs
+    gs_uri <- local_to_gcs(
+      x = here(path, "LULC.tif"),
+      bucket = 'wri-cities-lulc-gee' 
+    )
+
+    assetID <- paste0("projects/earthengine-legacy/assets/projects/wri-datalab/cities/SSC/LULC_V2/", city, "_LULC_1m_", i)
+
+    # 3. Create an Image Manifest
+    manifest <- ee_utils_create_manifest_image(gs_uri, assetID)
+
+    # 4. From GCS to Earth Engine
+    gcs_to_ee_image(
+      manifest = manifest,
+      overwrite = TRUE
+    )
     
     print("LULC raster saved")
-    toc()
-    toc()
+
     
     rm(esa_rast, open_space_rast, roads_rast, water_rast, buildings_rast,
        parking_rast, LULC)
@@ -807,7 +851,7 @@ create_LULC <- function(city, epsg){
 create_LULC("New_Orleans", 3452)
 
 aois <- tribble(~ city, ~ epsg, ~ zone, ~geoid, 
-                "New_Orleans", 3452, "Louisiana South", "62677",
+                # "New_Orleans", 3452, "Louisiana South", "62677",
                 "Dallas", 2276, "Texas North Central", "22042", 
                 "Columbia", 2273, "South Carolina", "18964", 
                 "Atlanta", 2240, "Georgia West", "03817", 
