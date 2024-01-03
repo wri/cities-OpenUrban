@@ -147,11 +147,11 @@ create_LULC <- function(city, epsg){
     
   }
   
-  road_lanes <- list.files(here(road_path), full.names = TRUE) %>%
-    map(\(x) st_read(x) %>% 
-          mutate(lanes = as.numeric(lanes))) %>%
-    reduce(bind_rows) %>% 
-    st_drop_geometry()
+  # road_lanes <- list.files(here(road_path), full.names = TRUE) %>%
+  #   map(\(x) st_read(x) %>% 
+  #         mutate(lanes = as.numeric(lanes))) %>%
+  #   reduce(bind_rows) %>% 
+  #   st_drop_geometry()
   
   # Get the avg number of lanes per highway class
   lanes <- road_lanes %>% 
@@ -164,7 +164,7 @@ create_LULC <- function(city, epsg){
   # Iterate over grid -------------------------------------------------------
 
   
-  for (i in 1:length(city_grid$ID)){
+  for (i in 15:length(city_grid$ID)){
     # Buffer grid cell so there will be overlap
     aoi <- city_grid %>% 
       filter(ID == i) %>% 
@@ -634,6 +634,9 @@ create_LULC <- function(city, epsg){
       mutate(ULU = as.integer(str_sub(ULU, start = -1))) %>% 
       group_by(ID) %>% 
       arrange(desc(coverage), .by_group = TRUE) %>% 
+      # Needs to be an if statement
+      # if coverage is equal between groups 
+      # building should be unclassified (0)
       slice_head() %>% 
       ungroup() %>% 
       arrange(ID)
@@ -844,11 +847,18 @@ create_LULC <- function(city, epsg){
   
 }
 
+
+# Iterate over cities -----------------------------------------------------
+
+
 # Cities and state plane epsg codes to iterate through
 # from https://spatialreference.org/
 # all NAD83 (ft)
 
 create_LULC("New_Orleans", 3452)
+
+city <- "Dallas"
+epsg <- 2276
 
 aois <- tribble(~ city, ~ epsg, ~ zone, ~geoid, 
                 # "New_Orleans", 3452, "Louisiana South", "62677",
