@@ -166,7 +166,7 @@ create_LULC <- function(city, epsg){
   # Iterate over grid -------------------------------------------------------
 
   
-  for (i in 33:length(city_grid$ID)){
+  for (i in 1:length(city_grid$ID)){
     # Buffer grid cell so there will be overlap
     aoi <- city_grid %>% 
       filter(ID == i) %>% 
@@ -954,7 +954,7 @@ create_LULC <- function(city, epsg){
     
     print("LULC raster saved")
 
-    keep <- c("city", "epsg", "city_grid", "lanes", "path", "road_path")
+    keep <- c("city", "epsg", "city_grid", "lanes", "path", "road_path", "aois")
     rm(list = setdiff(ls(), keep))
     
     gc()
@@ -980,7 +980,7 @@ create_LULC <- function(city, epsg){
 
 aois <- tribble(~ city, ~ epsg, ~ zone, ~geoid, 
                 # "New_Orleans", 3452, "Louisiana South", "62677",
-                "Dallas", 2276, "Texas North Central", "22042",
+                # "Dallas", 2276, "Texas North Central", "22042",
                 "Columbia", 2273, "South Carolina", "18964",
                 "Atlanta", 2240, "Georgia West", "03817",
                 "Boston", 2249, "Massachusetts Mainland", "09271", 
