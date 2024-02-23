@@ -115,6 +115,8 @@ builds <- geojsonsf::geojson_sf(here("Model", "buildings-sample-tiers.geojson"))
   # Convert area to meters
   # The areas were calculated in local state plane projs (ft) before
   # transforming to EPSG 4326
+  ######### This is not correct
+  ######### should be Area_m = Area_ft / 10.764
   mutate(Area_m = Area_ft / 3.281,
          ULU = as_factor(ULU),
          Slope = as_factor(Slope)) %>% 
@@ -190,7 +192,7 @@ precision(test_table)
 recall(test_table)
 
 write_rds(tree, here("data", "V2-building-class-tree.rds"))
-
+# tree <- read_rds(here("data", "V2-building-class-tree.rds"))
 
 # # Los Angeles
 # la.builds <- st_read(here("Model", "LA-buildings.shp"))

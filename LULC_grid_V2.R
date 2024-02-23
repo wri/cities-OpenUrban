@@ -36,6 +36,7 @@ create_LULC <- function(city, epsg){
   # city_name <- "Los Angeles"
   city_name <- city %>% 
     str_replace("_", " ")
+  print(city_name)
   
   # Create local city folder to store data
   path <- here("cities", city)
@@ -79,7 +80,7 @@ create_LULC <- function(city, epsg){
     print("dir exists")
   }
   
-  road_lanes <- tibble()
+  # road_lanes <- tibble()
   
   for (i in 1:length(city_grid$ID)){
     # Buffer grid cell so there will be overlap
@@ -142,18 +143,16 @@ create_LULC <- function(city, epsg){
              append = FALSE,
              delete_dsn = TRUE)
     
-    road_lanes <- road_lanes %>% 
-      bind_rows(st_drop_geometry(roads_grid))
+    # road_lanes <- road_lanes %>% 
+    #   bind_rows(st_drop_geometry(roads_grid))
     
   }
   
-  # Uncomment if you need to load already downloaded roads data
-  
-  # road_lanes <- list.files(here(road_path), full.names = TRUE) %>%
-  #   map(\(x) st_read(x) %>%
-  #         mutate(lanes = as.numeric(lanes))) %>%
-  #   reduce(bind_rows) %>%
-  #   st_drop_geometry()
+  road_lanes <- list.files(here(road_path), full.names = TRUE) %>%
+    map(\(x) st_read(x) %>%
+          mutate(lanes = as.numeric(lanes))) %>%
+    reduce(bind_rows) %>%
+    st_drop_geometry()
   
   # Get the avg number of lanes per highway class
   lanes <- road_lanes %>% 
@@ -167,6 +166,7 @@ create_LULC <- function(city, epsg){
 
   
   for (i in 1:length(city_grid$ID)){
+    print(paste0(city_name, " grid ", i))
     # Buffer grid cell so there will be overlap
     aoi <- city_grid %>% 
       filter(ID == i) %>% 
@@ -679,21 +679,26 @@ create_LULC <- function(city, epsg){
     openBuilds$start()
     
     # Move from GCS to local
-    ee_drive_to_local(task = ee_monitoring(openBuilds, max_attempts = 1000), 
-                      dsn = here(path, "openBuilds.geojson"),
-                      overwrite = TRUE)
+    get_open_buildings <- function(build_task){
+      ee_drive_to_local(task = ee_monitoring(build_task, max_attempts = 1000), 
+                        dsn = here(path, "openBuilds.geojson"),
+                        overwrite = TRUE)
+      openBuilds <- geojsonsf::geojson_sf(here(path, "openBuilds.geojson"))
+    }
     
-    openBuilds <- geojsonsf::geojson_sf(here(path, "openBuilds.geojson"))
+    openBuilds <- retry(get_open_buildings(openBuilds), when = "Failure")
+    # ee_drive_to_local(task = ee_monitoring(openBuilds, max_attempts = 1000), 
+    #                   dsn = here(path, "openBuilds.geojson"),
+    #                   overwrite = TRUE)
+    
+    # openBuilds <- geojsonsf::geojson_sf(here(path, "openBuilds.geojson"))
     
     drive_rm("rgee_backup/openBuilds.geojson")
     
     # ignore spherical geometries
     # sf::sf_use_s2(FALSE)
     
-    buildings <- st_make_valid(buildings)
     buildings <- buildings[which(st_is_valid(buildings)), ]
-    
-    openBuilds <- st_make_valid(openBuilds) 
     openBuilds <- openBuilds[which(st_is_valid(openBuilds)), ]
     
     # Intersect buildings and keep the open buildings that don't intersect OSM buildings
@@ -711,12 +716,15 @@ create_LULC <- function(city, epsg){
     # Get rid of any 3d geometries that cause a problem
     # there was one error in Dallas grid 32
     buildings <- buildings[which(st_dimension(buildings) == 2), ]
+    
+    # Get rid of geometry collections
+    buildings <- buildings[which(st_is(buildings, c("POLYGON","MULTIPOLYGON"))), ]
       
     ## Extract ULU to buildings ------------------------------------------------
     
     # Reproject buildings to match ULU
     buildings <- buildings %>% 
-      st_transform(crs = st_crs(ulu))
+      st_transform(crs = st_crs(ulu)) 
     
     print("buildings reproject")
     
@@ -771,6 +779,8 @@ create_LULC <- function(city, epsg){
     ## Tidy ---------------------------------------------------------------
     
     # Reproject to local state plane and calculate area
+    ######### This is not correct
+    ######### should be Area_m = Area_ft / 10.764
     buildings <- buildings %>% 
       st_transform(epsg) %>% 
       mutate(Area_ft = as.numeric(st_area(.)),
@@ -954,7 +964,7 @@ create_LULC <- function(city, epsg){
     
     print("LULC raster saved")
 
-    keep <- c("city", "epsg", "city_grid", "lanes", "path", "road_path", "aois")
+    keep <- c("city", "epsg", "city_grid", "lanes", "path", "road_path", "aois", "city_name")
     rm(list = setdiff(ls(), keep))
     
     gc()
@@ -981,14 +991,14 @@ create_LULC <- function(city, epsg){
 aois <- tribble(~ city, ~ epsg, ~ zone, ~geoid, 
                 # "New_Orleans", 3452, "Louisiana South", "62677",
                 # "Dallas", 2276, "Texas North Central", "22042",
-                "Columbia", 2273, "South Carolina", "18964",
-                "Atlanta", 2240, "Georgia West", "03817",
-                "Boston", 2249, "Massachusetts Mainland", "09271", 
-                "Phoenix", 2223, "Arizona Central", "69184", 
-                "Portland", 2269, "Oregon North", "71317",
-                "Charlotte", 2264, "North Carolina", "15670", 
-                "Jacksonville", 2236, "Florida East", "42346",
-                "San_Antonio", 2278, "Texas South Central", "78580")
+                # "Columbia", 2273, "South Carolina", "18964",
+                # "Atlanta", 2240, "Georgia West", "03817",
+                # "Boston", 2249, "Massachusetts Mainland", "09271", 
+                # "Phoenix", 2223, "Arizona Central", "69184", 
+                # "Portland", 2269, "Oregon North", "71317",
+                # "Charlotte", 2264, "North Carolina", "15670", 
+                "Jacksonville", 2236, "Florida East", "42346")
+                # "San_Antonio", 2278, "Texas South Central", "78580")
 
 # Iterate function for LULC creation over aois
 
