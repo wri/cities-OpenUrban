@@ -1,5 +1,7 @@
 import os
 from enum import Enum
+import boto3
+from botocore.exceptions import ClientError
 
 import numpy as np
 import geopandas as gpd
@@ -10,6 +12,30 @@ from city_metrix.layers import OpenStreetMap
 from city_metrix.layers import OpenStreetMapClass
 
 data_path = './data'
+copy_to_s3 = True
+
+
+def upload_to_s3(file_path):
+    """
+    Upload a local file to an S3 bucket, maintaining the relative path from './data'.
+    """
+    # Create a session using a specific profile
+    session = boto3.Session(profile_name='CitiesUserPermissionSet')
+    s3 = session.client("s3")
+    
+    bucket="wri-cities-heat"
+    s3_base_prefix="OpenUrban"
+
+    # Create an S3 key that mirrors the local structure inside 'data_path'
+    relative_path = os.path.relpath(file_path, data_path)
+    s3_key = os.path.join(s3_base_prefix, relative_path).replace(os.sep, "/")
+
+    print(f"Uploading {file_path} to s3://{bucket}/{s3_key}")
+    try:
+        s3.upload_file(file_path, bucket, s3_key)
+        print(f"Success")
+    except ClientError as e:
+        print(f"  Error uploading {file_path}: {e}")
 
 
 def create_grid_for_city(city_polygon, cell_size=0.15):
@@ -90,8 +116,13 @@ boundaries_path = f'{data_path}/{city}/boundaries'
 if not os.path.exists(boundaries_path):
     os.makedirs(boundaries_path)
 
+boundaries_file = f'{boundaries_path}/city_polygon.geojson'
+
 # Save to a GeoJSON file
-city_polygon.to_file(f'{boundaries_path}/city_polygon.geojson', driver='GeoJSON')
+city_polygon.to_file(boundaries_file, driver='GeoJSON')
+
+if copy_to_s3:
+    upload_to_s3(boundaries_file)
 
 
 
@@ -103,8 +134,12 @@ city_grid_path = f'{data_path}/{city}/city_grid'
 if not os.path.exists(city_grid_path):
     os.makedirs(city_grid_path)
 
+city_grid_file = f'{city_grid_path}/city_grid.geojson'
 # Save to a GeoJSON file
-city_grid.to_file(f'{city_grid_path}/city_grid.geojson', driver='GeoJSON')
+city_grid.to_file(city_grid_file, driver='GeoJSON')
+
+if copy_to_s3:
+    upload_to_s3(city_grid_file)
 
 # Check file with https://geojson.io/ or https://mapshaper.org/
 
@@ -125,8 +160,8 @@ for idx, cell in city_grid.iterrows():
     if not os.path.exists(roads_path):
         os.makedirs(roads_path)
 
+    roads_file = f'{roads_path}/roads_{grid_cell_id}.geojson'
     # Save to a GeoJSON file
-    city_roads.to_file(f'{roads_path}/roads_{grid_cell_id}.geojson', driver='GeoJSON')
-
-
-
+    city_roads.to_file(roads_file, driver='GeoJSON')
+    if copy_to_s3:
+        upload_to_s3(roads_file)
