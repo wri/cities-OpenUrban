@@ -292,7 +292,7 @@ def get_esa(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
         if len(esa_unique_values) == 1 and esa_unique_values[0] == 80:
             print(f"Cell {grid_cell_id} is all water, skipping...")
         else:
-            esa = EsaWorldCover().get_data(bbox, spatial_resolution=100)
+            esa = EsaWorldCover().get_data(bbox, spatial_resolution=1)
 
             if not os.path.exists(esa_path):
                 os.makedirs(esa_path)
