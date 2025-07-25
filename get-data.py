@@ -5,7 +5,6 @@ from city_metrix.metrix_model import GeoExtent
 
 from utils.download import *
 from utils.grid import create_grid_for_city
-from utils.upload import to_s3
 
 data_path = 'data'
 copy_to_s3 = False
@@ -13,10 +12,7 @@ copy_to_s3 = False
 city = 'ARG-Buenos_Aires'
 
 # Get city_polygon -------------------------------------------------
-city_polygon, boundaries_file = get_city_polygon(city, data_path=data_path)
-
-if copy_to_s3:
-    to_s3(boundaries_file)
+city_polygon, boundaries_file = get_city_polygon(city, data_path=data_path, copy_to_s3=copy_to_s3)
 
 # Get UTM -------------------------------------------------
 from utils.utm import get_utm
@@ -26,10 +22,7 @@ print(f"UTM EPSG: {utm_info['epsg']}, Earth Engine: {utm_info['ee']}")
 crs = 'EPSG:4326'
 
 # Create the grid for the city -------------------------------------------------
-city_grid, city_grid_file = create_grid_for_city(city, city_polygon, data_path=data_path)
-
-if copy_to_s3:
-    to_s3(city_grid_file)
+city_grid, city_grid_file = create_grid_for_city(city, city_polygon, data_path=data_path, copy_to_s3=copy_to_s3)
 
 # Check file with https://geojson.io/ or https://mapshaper.org/
 
@@ -45,42 +38,24 @@ for idx, cell in city_grid.iterrows():
     
     # Roads ---------------------
     print("Fetching roads data...")
-    roads, roads_file = get_roads(city, bbox, grid_cell_id, data_path=data_path)
-
-    if copy_to_s3:
-        to_s3(roads_file)
+    roads, roads_file = get_roads(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
 
     # Open Space ---------------------
     print("Fetching open space data...")
-    open_space, open_space_file = get_open_space(city, bbox, grid_cell_id, data_path=data_path)
-
-    if copy_to_s3:
-        to_s3(open_space_file)
+    open_space, open_space_file = get_open_space(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
 
     # Water ---------------------
     print("Fetching water data...")
-    water, water_file = get_water(city, bbox, grid_cell_id, data_path=data_path)
-
-    if copy_to_s3:
-        to_s3(water_file)
+    water, water_file = get_water(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
 
     # Overture Buildings ---------------------
     print("Fetching Overture buildings data...")
-    overture_buildings, overture_file = get_buildings(city, bbox, grid_cell_id, data_path=data_path)
-
-    if copy_to_s3:
-        to_s3(overture_file)
+    overture_buildings, overture_file = get_buildings(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
 
     # Urban Land Use ---------------------
     print("Fetching Urban Land Use data...")
-    urban_land_use, urban_land_use_file = get_urban_land_use(city, bbox, grid_cell_id, data_path=data_path)
-
-    if copy_to_s3:
-        to_s3(urban_land_use_file)
+    urban_land_use, urban_land_use_file = get_urban_land_use(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
 
     # ESA World Cover ---------------------
     print("Fetching ESA World Cover data...")
-    esa, esa_file = get_esa(city, bbox, grid_cell_id=grid_cell_id, data_path=data_path)
-
-    if copy_to_s3:
-        to_s3(esa_file)
+    esa, esa_file = get_esa(city, bbox, grid_cell_id=grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)

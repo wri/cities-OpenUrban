@@ -3,8 +3,10 @@ import numpy as np
 import geopandas as gpd
 from shapely.geometry import Polygon
 
+from utils.upload import to_s3
 
-def create_grid_for_city(city, city_polygon, data_path, crs='EPSG:4326', cell_size=0.15):
+
+def create_grid_for_city(city, city_polygon, data_path, copy_to_s3, crs='EPSG:4326', cell_size=0.15):
     """
     Generates a grid of polygons covering a city's geometry
 
@@ -71,5 +73,10 @@ def create_grid_for_city(city, city_polygon, data_path, crs='EPSG:4326', cell_si
     city_grid_file = f'{city_grid_path}/city_grid.geojson'
     # Save to a GeoJSON file
     city_grid.to_file(city_grid_file, driver='GeoJSON')
+
+    print(f"City grid saved to: {city_grid_file}")
+
+    if copy_to_s3:
+        to_s3(city_grid_file)
 
     return city_grid, city_grid_file

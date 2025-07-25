@@ -12,17 +12,21 @@ from city_metrix.layers import (
     UrbanLandUse
 )
 
+from utils.upload import to_s3
 
-def get_city_polygon(city, data_path, crs='EPSG:4326'):
+
+def get_city_polygon(city, data_path, copy_to_s3=False, crs='EPSG:4326'):
     """
     Fetches the city polygon from a remote URL and saves it to a local GeoJSON file.
     
     Args:
         city (str): The name of the city to fetch.
+        data_path (str): The path to save the city polygon data.
+        copy_to_s3 (bool): Whether to copy the file to S3 after saving locally.
         crs (str): The coordinate reference system to use for the polygon.
     
     Returns:
-        geopandas.GeoDataFrame: The city polygon as a GeoDataFrame.
+        tuple: (geopandas.GeoDataFrame, str) - The city polygon as a GeoDataFrame and the file path.
     """
     # Check if file already exists
     boundaries_path = f'{data_path}/{city}/boundaries'
@@ -49,9 +53,13 @@ def get_city_polygon(city, data_path, crs='EPSG:4326'):
         # Save to a GeoJSON file
         city_polygon.to_file(boundaries_file, driver='GeoJSON')
 
+        if copy_to_s3:
+            to_s3(boundaries_file)
+
     return city_polygon, boundaries_file
 
-def get_roads(city, bbox, grid_cell_id, data_path):
+
+def get_roads(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
     """
     Fetches the city roads from OpenStreetMap and saves it to a local GeoJSON file.
     
@@ -60,9 +68,10 @@ def get_roads(city, bbox, grid_cell_id, data_path):
         bbox (tuple): The bounding box of the grid cell as (minx, miny, maxx, maxy).
         grid_cell_id (int): The ID of the grid cell to fetch roads for.
         data_path (str): The path to save the roads data.
+        copy_to_s3 (bool): Whether to copy the file to S3 after saving locally.
     
     Returns:
-        geopandas.GeoDataFrame: Roads as a GeoDataFrame.
+        tuple: (geopandas.GeoDataFrame, str) - Roads as a GeoDataFrame and the file path.
     """
     roads_path = f'{data_path}/{city}/roads'
     roads_file = f'{roads_path}/roads_{grid_cell_id}.geojson'
@@ -80,10 +89,13 @@ def get_roads(city, bbox, grid_cell_id, data_path):
             os.makedirs(roads_path)
 
         # Save to a GeoJSON file
-
         roads.to_file(roads_file, driver='GeoJSON')
 
+        if copy_to_s3:
+            to_s3(roads_file)
+
     return roads, roads_file
+
 
 class OpenUrbanOpenStreetMapClass(Enum):
     OPEN_SPACE = {
@@ -107,7 +119,7 @@ class OpenUrbanOpenStreetMapClass(Enum):
             ]
         }
 
-def get_open_space(city, bbox, grid_cell_id, data_path):
+def get_open_space(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
     """
     Fetches the open space data from OpenStreetMap and saves it to a local GeoJSON file.
     
@@ -116,9 +128,10 @@ def get_open_space(city, bbox, grid_cell_id, data_path):
         bbox (tuple): The bounding box of the grid cell as (minx, miny, maxx, maxy).
         grid_cell_id (int): The ID of the grid cell to fetch open space for.
         data_path (str): The path to save the open space data.
+        copy_to_s3 (bool): Whether to copy the file to S3 after saving locally.
     
     Returns:
-        geopandas.GeoDataFrame: The open space as a GeoDataFrame.
+        tuple: (geopandas.GeoDataFrame, str) - The open space as a GeoDataFrame and the file path.
     """
     open_space_path = f'{data_path}/{city}/open_space'
     open_space_file = f'{open_space_path}/open_space_{grid_cell_id}.geojson'
@@ -138,9 +151,12 @@ def get_open_space(city, bbox, grid_cell_id, data_path):
         # Save to a GeoJSON file
         open_space.to_file(open_space_file, driver='GeoJSON')
 
+        if copy_to_s3:
+            to_s3(open_space_file)
+
     return open_space, open_space_file
 
-def get_water(city, bbox, grid_cell_id, data_path):
+def get_water(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
     """
     Fetches the water data from OpenStreetMap and saves it to a local GeoJSON file.
     
@@ -149,9 +165,10 @@ def get_water(city, bbox, grid_cell_id, data_path):
         bbox (tuple): The bounding box of the grid cell as (minx, miny, maxx, maxy).
         grid_cell_id (int): The ID of the grid cell to fetch water for.
         data_path (str): The path to save the water data.
+        copy_to_s3 (bool): Whether to copy the file to S3 after saving locally.
     
     Returns:
-        geopandas.GeoDataFrame: The water as a GeoDataFrame.
+        tuple: (geopandas.GeoDataFrame, str) - The water as a GeoDataFrame and the file path.
     """
     water_path = f'{data_path}/{city}/water'
     water_file = f'{water_path}/water_{grid_cell_id}.geojson'
@@ -171,9 +188,12 @@ def get_water(city, bbox, grid_cell_id, data_path):
         # Save to a GeoJSON file
         water.to_file(water_file, driver='GeoJSON')
 
+        if copy_to_s3:
+            to_s3(water_file)
+
     return water, water_file
 
-def get_buildings(city, bbox, grid_cell_id, data_path):
+def get_buildings(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
     """
     Fetches the building data from Overture Maps and saves it to a local GeoJSON file.
 
@@ -182,9 +202,10 @@ def get_buildings(city, bbox, grid_cell_id, data_path):
         bbox (tuple): The bounding box of the grid cell as (minx, miny, maxx, maxy).
         grid_cell_id (int): The ID of the grid cell to fetch buildings for.
         data_path (str): The path to save the buildings data.
+        copy_to_s3 (bool): Whether to copy the file to S3 after saving locally.
 
     Returns:
-        geopandas.GeoDataFrame: The buildings as a GeoDataFrame.
+        tuple: (geopandas.GeoDataFrame, str) - The buildings as a GeoDataFrame and the file path.
     """
     buildings_path = f'{data_path}/{city}/buildings'
     buildings_file = f'{buildings_path}/buildings_{grid_cell_id}.geojson'
@@ -211,6 +232,9 @@ def get_buildings(city, bbox, grid_cell_id, data_path):
             # Save to a GeoJSON file
             buildings.to_file(buildings_file, driver='GeoJSON')
             
+            if copy_to_s3:
+                to_s3(buildings_file)
+            
         except (OSError, ConnectionError, TimeoutError, Exception) as e:
             print(f"Error fetching buildings data for grid cell {grid_cell_id}: {e}")
             print(f"Creating empty buildings dataset for grid cell {grid_cell_id}")
@@ -227,7 +251,7 @@ def get_buildings(city, bbox, grid_cell_id, data_path):
 
     return buildings, buildings_file
 
-def get_urban_land_use(city, bbox, grid_cell_id, data_path):
+def get_urban_land_use(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
     """
     Fetches the urban land use data for the specified city and grid cell.
 
@@ -236,9 +260,10 @@ def get_urban_land_use(city, bbox, grid_cell_id, data_path):
         bbox (tuple): The bounding box of the grid cell as (minx, miny, maxx, maxy).
         grid_cell_id (int): The ID of the grid cell to fetch data for.
         data_path (str): The path to save the urban land use data.
+        copy_to_s3 (bool): Whether to copy the file to S3 after saving locally.
 
     Returns:
-        geopandas.GeoDataFrame: The urban land use data as a GeoDataFrame.
+        tuple: (geopandas.GeoDataFrame, str) - The urban land use data as a GeoDataFrame and the file path.
     """
     urban_land_use_path = f'{data_path}/{city}/urban_land_use'
     urban_land_use_file = f'{urban_land_use_path}/urban_land_use_{grid_cell_id}.tif'
@@ -258,19 +283,24 @@ def get_urban_land_use(city, bbox, grid_cell_id, data_path):
         # Write raster to tif file
         urban_land_use.rio.to_raster(raster_path=urban_land_use_file)
 
+        if copy_to_s3:
+            to_s3(urban_land_use_file)
+
     return urban_land_use, urban_land_use_file
 
-def get_esa(city, bbox, grid_cell_id, data_path):
+def get_esa(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
     """
     Fetches the ESA land cover data for the specified city and grid cell.
     
     Args:
         city (str): The name of the city to fetch ESA data for.
-        crs (str): The coordinate reference system to use for the data.
+        bbox (tuple): The bounding box of the grid cell as (minx, miny, maxx, maxy).
         grid_cell_id (int): The ID of the grid cell to fetch data for.
+        data_path (str): The path to save the ESA data.
+        copy_to_s3 (bool): Whether to copy the file to S3 after saving locally.
     
     Returns:
-        geopandas.GeoDataFrame: The ESA land cover data as a GeoDataFrame.
+        tuple: (raster data, str) - The ESA land cover data and the file path.
     """
     # Create ESA folder if it doesn't exist
     esa_path = f'{data_path}/{city}/esa'
@@ -292,7 +322,7 @@ def get_esa(city, bbox, grid_cell_id, data_path):
         if len(esa_unique_values) == 1 and esa_unique_values[0] == 80:
             print(f"Cell {grid_cell_id} is all water, skipping...")
         else:
-            esa = EsaWorldCover().get_data(bbox, spatial_resolution=1)
+            esa = EsaWorldCover().get_data(bbox, spatial_resolution=100)
 
             if not os.path.exists(esa_path):
                 os.makedirs(esa_path)
@@ -300,4 +330,8 @@ def get_esa(city, bbox, grid_cell_id, data_path):
             # Write raster to tif file
             esa.rio.to_raster(raster_path=esa_file)
 
+            if copy_to_s3:
+                to_s3(esa_file)
+
     return esa, esa_file
+
