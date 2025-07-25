@@ -177,6 +177,38 @@ def get_water(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
             to_s3(water_file, data_path)
 
 
+def get_parking(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
+    """
+    Fetches the parking data from OpenStreetMap and saves it to a local GeoJSON file.
+    
+    Args:
+        city (str): The name of the city to fetch parking for.
+        bbox (tuple): The bounding box of the grid cell as (minx, miny, maxx, maxy).
+        grid_cell_id (int): The ID of the grid cell to fetch parking for.
+        data_path (str): The path to save the parking data.
+        copy_to_s3 (bool): Whether to copy the file to S3 after saving locally.
+    """
+    parking_path = f'{data_path}/{city}/parking'
+    parking_file = f'{parking_path}/parking_{grid_cell_id}.geojson'
+
+    # If the parking file already exists, skip fetching
+    if os.path.exists(parking_file):
+        print(f"Parking data already exists at {parking_file}, skipping fetch.")
+    else:
+        print(f"Fetching parking data for {city}...")
+        parking = OpenStreetMap(osm_class=OpenStreetMapClass.PARKING).get_data(bbox)
+
+        # Create parking folder if it doesn't exist
+        if not os.path.exists(parking_path):
+            os.makedirs(parking_path)
+
+        # Save to a GeoJSON file
+        parking.to_file(parking_file, driver='GeoJSON')
+
+        if copy_to_s3:
+            to_s3(parking_file, data_path)
+
+
 def get_buildings(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
     """
     Fetches the building data from Overture Maps and saves it to a local GeoJSON file.

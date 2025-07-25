@@ -63,10 +63,11 @@ def main():
             buildings_task = delayed(get_buildings)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
             urban_land_use_task = delayed(get_urban_land_use)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
             esa_task = delayed(get_esa)(city, bbox, grid_cell_id=grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
+            parking_task = delayed(get_parking)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
             
             # Add all tasks to the master list
-            all_tasks.extend([roads_task, open_space_task, water_task, buildings_task, urban_land_use_task, esa_task])
-            
+            all_tasks.extend([roads_task, open_space_task, water_task, buildings_task, urban_land_use_task, esa_task, parking_task])
+
             # Keep track of what each task does for debugging
             task_descriptions.extend([
                 f"roads_cell_{grid_cell_id}",
