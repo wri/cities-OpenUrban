@@ -3,7 +3,7 @@ import numpy as np
 
 from city_metrix.metrix_model import GeoExtent
 
-from utils.download import get_city_polygon, get_roads, get_esa
+from utils.download import *
 from utils.grid import create_grid_for_city
 from utils.upload import to_s3
 
@@ -50,6 +50,37 @@ for idx, cell in city_grid.iterrows():
     if copy_to_s3:
         to_s3(roads_file)
 
+    # Open Space ---------------------
+    print("Fetching open space data...")
+    open_space, open_space_file = get_open_space(city, bbox, grid_cell_id, data_path=data_path)
+
+    if copy_to_s3:
+        to_s3(open_space_file)
+
+    # Water ---------------------
+    print("Fetching water data...")
+    water, water_file = get_water(city, bbox, grid_cell_id, data_path=data_path)
+
+    if copy_to_s3:
+        to_s3(water_file)
+
+    # Overture Buildings ---------------------
+    print("Fetching Overture buildings data...")
+    overture_buildings, overture_file = get_buildings(city, bbox, grid_cell_id, data_path=data_path)
+
+    if copy_to_s3:
+        to_s3(overture_file)
+
+    # Urban Land Use ---------------------
+    print("Fetching Urban Land Use data...")
+    urban_land_use, urban_land_use_file = get_urban_land_use(city, bbox, grid_cell_id, data_path=data_path)
+
+    if copy_to_s3:
+        to_s3(urban_land_use_file)
+
     # ESA World Cover ---------------------
     print("Fetching ESA World Cover data...")
     esa, esa_file = get_esa(city, bbox, grid_cell_id=grid_cell_id, data_path=data_path)
+
+    if copy_to_s3:
+        to_s3(esa_file)

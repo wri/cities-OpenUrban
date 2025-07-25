@@ -4,7 +4,13 @@ import geopandas as gpd
 import rasterio
 from enum import Enum
 
-from city_metrix.layers import OpenStreetMap, OpenStreetMapClass, EsaWorldCover
+from city_metrix.layers import (
+    OpenStreetMap, 
+    OpenStreetMapClass, 
+    EsaWorldCover, 
+    OvertureBuildings, 
+    UrbanLandUse
+)
 
 
 def get_city_polygon(city, data_path, crs='EPSG:4326'):
@@ -79,6 +85,180 @@ def get_roads(city, bbox, grid_cell_id, data_path):
 
     return roads, roads_file
 
+class OpenUrbanOpenStreetMapClass(Enum):
+    OPEN_SPACE = {
+        'leisure': [
+            'pitch', 
+            'park', 
+            'garden', 
+            'playground', 
+            'nature_reserve', 
+            'golf_course',
+            'common',
+            'dog_park',
+            'recreation_ground',
+            'disc_golf_course'
+            ],
+        'boundary': [
+            'protected_area', 
+            'national_park',
+            'forest_compartment',
+            'forest'
+            ]
+        }
+
+def get_open_space(city, bbox, grid_cell_id, data_path):
+    """
+    Fetches the open space data from OpenStreetMap and saves it to a local GeoJSON file.
+    
+    Args:
+        city (str): The name of the city to fetch open space for.
+        bbox (tuple): The bounding box of the grid cell as (minx, miny, maxx, maxy).
+        grid_cell_id (int): The ID of the grid cell to fetch open space for.
+        data_path (str): The path to save the open space data.
+    
+    Returns:
+        geopandas.GeoDataFrame: The open space as a GeoDataFrame.
+    """
+    open_space_path = f'{data_path}/{city}/open_space'
+    open_space_file = f'{open_space_path}/open_space_{grid_cell_id}.geojson'
+
+    # If the open space file already exists, skip fetching
+    if os.path.exists(open_space_file):
+        print(f"Open space data already exists at {open_space_file}, skipping fetch.")
+        open_space = gpd.read_file(open_space_file)
+    else:
+        print(f"Fetching open space data for {city}...")
+        open_space = OpenStreetMap(osm_class=OpenUrbanOpenStreetMapClass.OPEN_SPACE).get_data(bbox)
+
+        # Create open space folder if it doesn't exist
+        if not os.path.exists(open_space_path):
+            os.makedirs(open_space_path)
+
+        # Save to a GeoJSON file
+        open_space.to_file(open_space_file, driver='GeoJSON')
+
+    return open_space, open_space_file
+
+def get_water(city, bbox, grid_cell_id, data_path):
+    """
+    Fetches the water data from OpenStreetMap and saves it to a local GeoJSON file.
+    
+    Args:
+        city (str): The name of the city to fetch water for.
+        bbox (tuple): The bounding box of the grid cell as (minx, miny, maxx, maxy).
+        grid_cell_id (int): The ID of the grid cell to fetch water for.
+        data_path (str): The path to save the water data.
+    
+    Returns:
+        geopandas.GeoDataFrame: The water as a GeoDataFrame.
+    """
+    water_path = f'{data_path}/{city}/water'
+    water_file = f'{water_path}/water_{grid_cell_id}.geojson'
+
+    # If the water file already exists, skip fetching
+    if os.path.exists(water_file):
+        print(f"Water data already exists at {water_file}, skipping fetch.")
+        water = gpd.read_file(water_file)
+    else:
+        print(f"Fetching water data for {city}...")
+        water = OpenStreetMap(osm_class=OpenStreetMapClass.WATER).get_data(bbox)
+
+        # Create water folder if it doesn't exist
+        if not os.path.exists(water_path):
+            os.makedirs(water_path)
+
+        # Save to a GeoJSON file
+        water.to_file(water_file, driver='GeoJSON')
+
+    return water, water_file
+
+def get_buildings(city, bbox, grid_cell_id, data_path):
+    """
+    Fetches the building data from Overture Maps and saves it to a local GeoJSON file.
+
+    Args:
+        city (str): The name of the city to fetch buildings for.
+        bbox (tuple): The bounding box of the grid cell as (minx, miny, maxx, maxy).
+        grid_cell_id (int): The ID of the grid cell to fetch buildings for.
+        data_path (str): The path to save the buildings data.
+
+    Returns:
+        geopandas.GeoDataFrame: The buildings as a GeoDataFrame.
+    """
+    buildings_path = f'{data_path}/{city}/buildings'
+    buildings_file = f'{buildings_path}/buildings_{grid_cell_id}.geojson'
+
+    # If the buildings file already exists, skip fetching
+    if os.path.exists(buildings_file):
+        print(f"Buildings data already exists at {buildings_file}, skipping fetch.")
+        buildings = gpd.read_file(buildings_file)
+    else:
+        print(f"Fetching buildings data for {city}...")
+        try:
+            buildings = OvertureBuildings().get_data(bbox)
+            
+            # Check if buildings data is empty
+            if buildings is None or len(buildings) == 0:
+                print(f"No buildings found for grid cell {grid_cell_id}")
+                # Create empty GeoDataFrame with the same structure
+                buildings = gpd.GeoDataFrame(columns=['geometry'], crs='EPSG:4326')
+            
+            # Create buildings folder if it doesn't exist
+            if not os.path.exists(buildings_path):
+                os.makedirs(buildings_path)
+
+            # Save to a GeoJSON file
+            buildings.to_file(buildings_file, driver='GeoJSON')
+            
+        except (OSError, ConnectionError, TimeoutError, Exception) as e:
+            print(f"Error fetching buildings data for grid cell {grid_cell_id}: {e}")
+            print(f"Creating empty buildings dataset for grid cell {grid_cell_id}")
+            
+            # Create empty GeoDataFrame
+            buildings = gpd.GeoDataFrame(columns=['geometry'], crs='EPSG:4326')
+            
+            # Create buildings folder if it doesn't exist
+            if not os.path.exists(buildings_path):
+                os.makedirs(buildings_path)
+            
+            # Save empty dataset to file so we don't retry
+            buildings.to_file(buildings_file, driver='GeoJSON')
+
+    return buildings, buildings_file
+
+def get_urban_land_use(city, bbox, grid_cell_id, data_path):
+    """
+    Fetches the urban land use data for the specified city and grid cell.
+
+    Args:
+        city (str): The name of the city to fetch urban land use data for.
+        bbox (tuple): The bounding box of the grid cell as (minx, miny, maxx, maxy).
+        grid_cell_id (int): The ID of the grid cell to fetch data for.
+        data_path (str): The path to save the urban land use data.
+
+    Returns:
+        geopandas.GeoDataFrame: The urban land use data as a GeoDataFrame.
+    """
+    urban_land_use_path = f'{data_path}/{city}/urban_land_use'
+    urban_land_use_file = f'{urban_land_use_path}/urban_land_use_{grid_cell_id}.tif'
+
+    # If the urban land use file already exists, skip fetching
+    if os.path.exists(urban_land_use_file):
+        print(f"Urban land use data already exists at {urban_land_use_file}, skipping fetch.")
+        urban_land_use = gpd.read_file(urban_land_use_file)
+    else:
+        print(f"Fetching urban land use data for {city}...")
+        urban_land_use = UrbanLandUse().get_data(bbox)
+
+        # Create urban land use folder if it doesn't exist
+        if not os.path.exists(urban_land_use_path):
+            os.makedirs(urban_land_use_path)
+
+        # Write raster to tif file
+        urban_land_use.rio.to_raster(raster_path=urban_land_use_file)
+
+    return urban_land_use, urban_land_use_file
 
 def get_esa(city, bbox, grid_cell_id, data_path):
     """
@@ -121,5 +301,3 @@ def get_esa(city, bbox, grid_cell_id, data_path):
             esa.rio.to_raster(raster_path=esa_file)
 
     return esa, esa_file
-
-    
