@@ -1,0 +1,7 @@
+name: open-urban
+dependencies:
+  - python=3.12
+  - dask
+  - pip
+  - pip:
+    - git+https://github.com/wri/cities-cif.git
