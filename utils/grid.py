@@ -4,7 +4,7 @@ import geopandas as gpd
 from shapely.geometry import Polygon
 
 
-def create_grid_for_city(city, crs, city_polygon, data_path, cell_size=0.15):
+def create_grid_for_city(city, city_polygon, data_path, crs='EPSG:4326', cell_size=0.15):
     """
     Generates a grid of polygons covering a city's geometry
 
