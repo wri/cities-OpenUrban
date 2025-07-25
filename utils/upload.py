@@ -1,8 +1,8 @@
+import os
 import boto3
 from botocore.exceptions import ClientError
 
-
-def to_s3(file_path):
+def to_s3(file_path, data_path):
     """
     Upload a local file to an S3 bucket, maintaining the relative path from './data'.
     """
@@ -13,7 +13,9 @@ def to_s3(file_path):
     bucket="wri-cities-heat"
     s3_base_prefix="OpenUrban"
 
-    s3_key = f"{s3_base_prefix}/{file_path}"
+    # Remove data_path from the beginning of the file path
+    s3_path = os.path.relpath(file_path, data_path)
+    s3_key = f"{s3_base_prefix}/{s3_path}"
 
     print(f"Uploading {file_path} to s3://{bucket}/{s3_key}")
     try:

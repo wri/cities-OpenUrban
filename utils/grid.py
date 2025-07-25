@@ -15,8 +15,7 @@ def create_grid_for_city(city, city_polygon, data_path, copy_to_s3, crs='EPSG:43
         cell_size (float): The width and height of the grid cells in decimal degrees.
 
     Returns:
-        geopandas.GeoDataFrame: A GeoDataFrame containing the grid cells that
-                                intersect with the city's geometry.
+        geopandas.GeoDataFrame: A GeoDataFrame containing the grid cells that intersect the city geometry.
     """
     # 1. Check it's in WGS84 (EPSG:4326) as the cell size is in degrees
     if crs != 'EPSG:4326':
@@ -77,6 +76,6 @@ def create_grid_for_city(city, city_polygon, data_path, copy_to_s3, crs='EPSG:43
     print(f"City grid saved to: {city_grid_file}")
 
     if copy_to_s3:
-        to_s3(city_grid_file)
+        to_s3(city_grid_file, data_path)
 
-    return city_grid, city_grid_file
+    return city_grid

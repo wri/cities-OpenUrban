@@ -26,7 +26,7 @@ def get_city_polygon(city, data_path, copy_to_s3=False, crs='EPSG:4326'):
         crs (str): The coordinate reference system to use for the polygon.
     
     Returns:
-        tuple: (geopandas.GeoDataFrame, str) - The city polygon as a GeoDataFrame and the file path.
+        geopandas.GeoDataFrame: The city polygon as a GeoDataFrame.
     """
     # Check if file already exists
     boundaries_path = f'{data_path}/{city}/boundaries'
@@ -54,9 +54,9 @@ def get_city_polygon(city, data_path, copy_to_s3=False, crs='EPSG:4326'):
         city_polygon.to_file(boundaries_file, driver='GeoJSON')
 
         if copy_to_s3:
-            to_s3(boundaries_file)
+            to_s3(boundaries_file, data_path)
 
-    return city_polygon, boundaries_file
+    return city_polygon
 
 
 def get_roads(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
@@ -69,9 +69,6 @@ def get_roads(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
         grid_cell_id (int): The ID of the grid cell to fetch roads for.
         data_path (str): The path to save the roads data.
         copy_to_s3 (bool): Whether to copy the file to S3 after saving locally.
-    
-    Returns:
-        tuple: (geopandas.GeoDataFrame, str) - Roads as a GeoDataFrame and the file path.
     """
     roads_path = f'{data_path}/{city}/roads'
     roads_file = f'{roads_path}/roads_{grid_cell_id}.geojson'
@@ -79,7 +76,6 @@ def get_roads(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
     # If the roads file already exists, skip fetching
     if os.path.exists(roads_file):
         print(f"Roads data already exists at {roads_file}, skipping fetch.")
-        roads = gpd.read_file(roads_file)
     else:
         print(f"Fetching roads data for {city}...")
         roads = OpenStreetMap(osm_class=OpenStreetMapClass.ROAD).get_data(bbox)
@@ -92,9 +88,7 @@ def get_roads(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
         roads.to_file(roads_file, driver='GeoJSON')
 
         if copy_to_s3:
-            to_s3(roads_file)
-
-    return roads, roads_file
+            to_s3(roads_file, data_path)
 
 
 class OpenUrbanOpenStreetMapClass(Enum):
@@ -129,9 +123,6 @@ def get_open_space(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
         grid_cell_id (int): The ID of the grid cell to fetch open space for.
         data_path (str): The path to save the open space data.
         copy_to_s3 (bool): Whether to copy the file to S3 after saving locally.
-    
-    Returns:
-        tuple: (geopandas.GeoDataFrame, str) - The open space as a GeoDataFrame and the file path.
     """
     open_space_path = f'{data_path}/{city}/open_space'
     open_space_file = f'{open_space_path}/open_space_{grid_cell_id}.geojson'
@@ -139,7 +130,6 @@ def get_open_space(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
     # If the open space file already exists, skip fetching
     if os.path.exists(open_space_file):
         print(f"Open space data already exists at {open_space_file}, skipping fetch.")
-        open_space = gpd.read_file(open_space_file)
     else:
         print(f"Fetching open space data for {city}...")
         open_space = OpenStreetMap(osm_class=OpenUrbanOpenStreetMapClass.OPEN_SPACE).get_data(bbox)
@@ -152,9 +142,8 @@ def get_open_space(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
         open_space.to_file(open_space_file, driver='GeoJSON')
 
         if copy_to_s3:
-            to_s3(open_space_file)
+            to_s3(open_space_file, data_path)
 
-    return open_space, open_space_file
 
 def get_water(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
     """
@@ -166,9 +155,6 @@ def get_water(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
         grid_cell_id (int): The ID of the grid cell to fetch water for.
         data_path (str): The path to save the water data.
         copy_to_s3 (bool): Whether to copy the file to S3 after saving locally.
-    
-    Returns:
-        tuple: (geopandas.GeoDataFrame, str) - The water as a GeoDataFrame and the file path.
     """
     water_path = f'{data_path}/{city}/water'
     water_file = f'{water_path}/water_{grid_cell_id}.geojson'
@@ -176,7 +162,6 @@ def get_water(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
     # If the water file already exists, skip fetching
     if os.path.exists(water_file):
         print(f"Water data already exists at {water_file}, skipping fetch.")
-        water = gpd.read_file(water_file)
     else:
         print(f"Fetching water data for {city}...")
         water = OpenStreetMap(osm_class=OpenStreetMapClass.WATER).get_data(bbox)
@@ -189,9 +174,8 @@ def get_water(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
         water.to_file(water_file, driver='GeoJSON')
 
         if copy_to_s3:
-            to_s3(water_file)
+            to_s3(water_file, data_path)
 
-    return water, water_file
 
 def get_buildings(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
     """
@@ -203,9 +187,6 @@ def get_buildings(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
         grid_cell_id (int): The ID of the grid cell to fetch buildings for.
         data_path (str): The path to save the buildings data.
         copy_to_s3 (bool): Whether to copy the file to S3 after saving locally.
-
-    Returns:
-        tuple: (geopandas.GeoDataFrame, str) - The buildings as a GeoDataFrame and the file path.
     """
     buildings_path = f'{data_path}/{city}/buildings'
     buildings_file = f'{buildings_path}/buildings_{grid_cell_id}.geojson'
@@ -213,7 +194,6 @@ def get_buildings(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
     # If the buildings file already exists, skip fetching
     if os.path.exists(buildings_file):
         print(f"Buildings data already exists at {buildings_file}, skipping fetch.")
-        buildings = gpd.read_file(buildings_file)
     else:
         print(f"Fetching buildings data for {city}...")
         try:
@@ -233,7 +213,7 @@ def get_buildings(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
             buildings.to_file(buildings_file, driver='GeoJSON')
             
             if copy_to_s3:
-                to_s3(buildings_file)
+                to_s3(buildings_file, data_path)
             
         except (OSError, ConnectionError, TimeoutError, Exception) as e:
             print(f"Error fetching buildings data for grid cell {grid_cell_id}: {e}")
@@ -249,7 +229,6 @@ def get_buildings(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
             # Save empty dataset to file so we don't retry
             buildings.to_file(buildings_file, driver='GeoJSON')
 
-    return buildings, buildings_file
 
 def get_urban_land_use(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
     """
@@ -261,9 +240,6 @@ def get_urban_land_use(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
         grid_cell_id (int): The ID of the grid cell to fetch data for.
         data_path (str): The path to save the urban land use data.
         copy_to_s3 (bool): Whether to copy the file to S3 after saving locally.
-
-    Returns:
-        tuple: (geopandas.GeoDataFrame, str) - The urban land use data as a GeoDataFrame and the file path.
     """
     urban_land_use_path = f'{data_path}/{city}/urban_land_use'
     urban_land_use_file = f'{urban_land_use_path}/urban_land_use_{grid_cell_id}.tif'
@@ -271,7 +247,6 @@ def get_urban_land_use(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
     # If the urban land use file already exists, skip fetching
     if os.path.exists(urban_land_use_file):
         print(f"Urban land use data already exists at {urban_land_use_file}, skipping fetch.")
-        urban_land_use = gpd.read_file(urban_land_use_file)
     else:
         print(f"Fetching urban land use data for {city}...")
         urban_land_use = UrbanLandUse().get_data(bbox)
@@ -284,9 +259,8 @@ def get_urban_land_use(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
         urban_land_use.rio.to_raster(raster_path=urban_land_use_file)
 
         if copy_to_s3:
-            to_s3(urban_land_use_file)
+            to_s3(urban_land_use_file, data_path)
 
-    return urban_land_use, urban_land_use_file
 
 def get_esa(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
     """
@@ -298,9 +272,6 @@ def get_esa(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
         grid_cell_id (int): The ID of the grid cell to fetch data for.
         data_path (str): The path to save the ESA data.
         copy_to_s3 (bool): Whether to copy the file to S3 after saving locally.
-    
-    Returns:
-        tuple: (raster data, str) - The ESA land cover data and the file path.
     """
     # Create ESA folder if it doesn't exist
     esa_path = f'{data_path}/{city}/esa'
@@ -309,7 +280,6 @@ def get_esa(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
     # If the ESA file already exists, skip fetching
     if os.path.exists(esa_file):
         print(f"ESA data already exists at {esa_file}, skipping fetch.")
-        esa = rasterio.open(esa_file)
     else:
         print(f"Fetching ESA LULC data for {city}...")
         # Check if all pixels are water (value 80 in ESA WorldCover)
@@ -331,7 +301,4 @@ def get_esa(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
             esa.rio.to_raster(raster_path=esa_file)
 
             if copy_to_s3:
-                to_s3(esa_file)
-
-    return esa, esa_file
-
+                to_s3(esa_file, data_path)
