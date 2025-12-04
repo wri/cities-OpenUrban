@@ -1,19 +1,31 @@
+
 import os
 import numpy as np
 
 from city_metrix.metrix_model import GeoExtent
 
+import importlib, utils.download as download
+importlib.reload(download)
+
 from utils.download import *
 from utils.grid import create_grid_for_city
 
-def main():
-    data_path = 'data'
-    copy_to_s3 = True
+import os, glob
+import geopandas as gpd
+import pandas as pd
 
-    city = 'ARG-Buenos_Aires'
+
+
+
+def get_data(city, output_base="."):
+    # city = "ZAF-Durban"
+    data_path = os.path.join(output_base, "data")
+    # copy_to_s3 = True
+
+    
 
     # Get city_polygon -------------------------------------------------
-    city_polygon = get_city_polygon(city, data_path=data_path, copy_to_s3=copy_to_s3)
+    city_polygon = get_city_polygon(city, data_path=data_path, copy_to_s3=True)
 
     # Get UTM -------------------------------------------------
     from utils.utm import get_utm
@@ -21,9 +33,21 @@ def main():
     print(f"UTM EPSG: {utm_info['epsg']}, Earth Engine: {utm_info['ee']}")
     #crs = utm_info['ee']
     crs = 'EPSG:4326'
+    
+    # Download vector data
+    minx, miny, maxx, maxy = city_polygon.total_bounds  
+    bbox = GeoExtent(bbox=[minx, miny, maxx, maxy])
+    
+    get_roads(city, bbox, grid_cell_id = "all",  data_path=data_path, copy_to_s3=True)
+    get_open_space(city, bbox, grid_cell_id = "all",  data_path=data_path, copy_to_s3=True)
+    get_water(city, bbox, grid_cell_id = "all",  data_path=data_path, copy_to_s3=True)
+    # # get_buildings(city, bbox, grid_cell_id = "all",  data_path=data_path, copy_to_s3=True)
+    get_parking(city, bbox, grid_cell_id = "all",  data_path=data_path, copy_to_s3=True)
+    
+    summarize_average_lanes(city, data_path=data_path, copy_to_s3=True)
 
     # Create the grid for the city -------------------------------------------------
-    city_grid = create_grid_for_city(city, city_polygon, data_path=data_path, copy_to_s3=copy_to_s3)
+    city_grid = create_grid_for_city(city, city_polygon, data_path=data_path, copy_to_s3=True)
 
     # Get existing city grid from file
 
@@ -57,25 +81,24 @@ def main():
             print(f"Preparing tasks for grid cell {grid_cell_id} with bbox: {geographic_bbox_str}")
             
             # Create all data fetching tasks for this cell
-            roads_task = delayed(get_roads)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
-            open_space_task = delayed(get_open_space)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
-            water_task = delayed(get_water)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
-            buildings_task = delayed(get_buildings)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
-            urban_land_use_task = delayed(get_urban_land_use)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
-            esa_task = delayed(get_esa)(city, bbox, grid_cell_id=grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
-            parking_task = delayed(get_parking)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
-            
+            # roads_task = delayed(get_roads)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
+            # open_space_task = delayed(get_open_space)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
+            # water_task = delayed(get_water)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
+            buildings_task = delayed(get_buildings)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=True)
+            urban_land_use_task = delayed(get_urban_land_use)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=False)
+            esa_task = delayed(get_esa)(city, bbox, grid_cell_id=grid_cell_id, data_path=data_path, copy_to_s3=False)
+            anbh_task = delayed(get_anbh)(city, bbox, grid_cell_id=grid_cell_id, data_path=data_path, copy_to_s3=False)
+            # parking_task = delayed(get_parking)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
+
             # Add all tasks to the master list
-            all_tasks.extend([roads_task, open_space_task, water_task, buildings_task, urban_land_use_task, esa_task, parking_task])
+            all_tasks.extend([buildings_task, urban_land_use_task, esa_task, anbh_task])
 
             # Keep track of what each task does for debugging
             task_descriptions.extend([
-                f"roads_cell_{grid_cell_id}",
-                f"open_space_cell_{grid_cell_id}",
-                f"water_cell_{grid_cell_id}",
                 f"buildings_cell_{grid_cell_id}",
                 f"urban_land_use_cell_{grid_cell_id}",
-                f"esa_cell_{grid_cell_id}"
+                f"esa_cell_{grid_cell_id}",
+                f"anbh_cell_{grid_cell_id}"
             ])
         
         # Execute ALL tasks in parallel across all cells and all data types
@@ -104,6 +127,9 @@ def main():
     finally:
         # Close the Dask client
         client.close()
+        
+    merge_building_tiles(city, data_path=data_path, keep_tiles=True, copy_to_s3=True)
 
-if __name__ == '__main__':
-    main()
+# if __name__ == '__main__':
+#     main()
+
