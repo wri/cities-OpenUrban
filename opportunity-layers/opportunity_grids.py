@@ -72,7 +72,6 @@ def export_flat_to_gcs_and_s3(flat,
     # GCS blob path
     gcs_blob_name = gcs_prefix + ".csv"
 
-    # ---- THIS IS THE IMPORTANT CHANGE ----
     print(f"Downloading from gs://{gcs_bucket}/{gcs_blob_name} ...")
     gcs_client = gcs_storage.Client(project=gcs_project)
     bucket_gcs = gcs_client.bucket(gcs_bucket)
@@ -125,7 +124,7 @@ def run_city(
     grid_key = f"{s3_prefix}/worldpop_grid_100m.geojson"
 
     # -----------------------------------------------------------------
-    # 1. Extent (urban extent union for city)
+    # 1. Extent (urban extent for city)
     # -----------------------------------------------------------------
     urban_extents = ee.FeatureCollection(
         "projects/wri-datalab/cities/urban_land_use/data/global_cities_Aug2024/urbanextents_unions_2020"
