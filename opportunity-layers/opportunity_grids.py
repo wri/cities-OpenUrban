@@ -185,6 +185,19 @@ def run_city(
     to_vals   = [110, 120, 130, 200,   9, 400, 500, 600, 601, 602, 600, 601, 602, 600, 601, 602]
 
     plantable_lulc = lulc_img.remap(from_vals, to_vals).rename("lulc")
+    
+    # Add plantable street as a class to LULC
+    # Street right-of-way
+    streets = lulc_img.remap(from_vals, [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]).rename("streets")
+    rightOfWay = streets.focal_max(
+        kernel = ee.Kernel.square(radius=5, units='pixels'),
+        iterations = 1
+    )
+    
+    # Plantable street
+    plantable = plantable_lulc.lt(500)
+    plantable_street = rightOfWay.subtract(streets).updateMask(plantable)
+    plantable_lulc = plantable_lulc.where(plantable_street.eq(1), 501)
 
     # mask out water (lulc == 9)
     no_water_mask = plantable_lulc.neq(9)

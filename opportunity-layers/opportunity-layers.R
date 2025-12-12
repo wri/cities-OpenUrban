@@ -78,7 +78,8 @@ dat <- read_csv(
 
 # --- Get projection from data ------------------------------------------
 proj <- dat %>% 
-  pull(crs) 
+  pull(crs) %>% 
+  unique()
 
 # --- Load grid and reproject -------------------------------------------
 grid <- st_read(glue("https://wri-cities-heat.s3.us-east-1.amazonaws.com/OpenUrban/{city_name}/opportunity/worldpop_grid_100m.geojson")) %>% 
@@ -91,16 +92,17 @@ lulc_codes <- c("Green space (other)",
                 "Public open space",
                 "Parking",
                 "Roads",
+                "Street right-of-way",
                 "Buildings")
 
 # Plantable LULC classes (codes)
-plantable <- c(110, 120, 130, 200, 400)
+plantable <- c(110, 120, 130, 200, 400, 501)
 
 # --- Add plantable flag, LULC factor, city & area in hectares ----------
 dat <- dat %>% 
   mutate(
     plantable = ifelse(lulc %in% plantable, TRUE, FALSE),
-    lulc      = factor(lulc, levels = c(110, 120, 130, 200, 400, 500, 600), labels = lulc_codes),
+    lulc      = factor(lulc, levels = c(110, 120, 130, 200, 400, 500, 501, 600), labels = lulc_codes),
     city      = city_name,
     area_ha   = area / 10000
   ) 
@@ -114,7 +116,8 @@ percentiles <- dat %>%
       lulc == "Built up (other)"    ~ 0.30,
       lulc == "Barren"              ~ 0.30,
       lulc == "Parking"             ~ 0.30,
-      lulc == "Public open space"   ~ 0.75,
+      lulc == "Public open space"   ~ 0.90,
+      lulc == "Street right-of-way"   ~ 0.90,
       TRUE                          ~ NA_real_
     )
   ) %>%
