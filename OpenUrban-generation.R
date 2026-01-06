@@ -525,6 +525,21 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
   )
   
   
+  library(here)
+  Sys.getenv(c("GOOGLE_APPLICATION_USER","GOOGLE_APPLICATION_CREDENTIALS"))
+  
+  gee_args <- c(
+    "--local-file", local_file,
+    "--collection-id", "projects/wri-datalab/cities/OpenUrban/OpenUrban_LULC",
+    "--city_name", city_name,
+    "--gridcell_id", gridcell_id,
+    "--version", version,
+    "--overwrite"
+  )
+
+  system2(here("./upload_gee.py"), args = gee_args)
+          
+          
   print("LULC raster saved")
   
 }
