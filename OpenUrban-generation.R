@@ -150,7 +150,7 @@ if (!dir.exists(city_path)) {dir.create(city_path)}
 
 open_urban_aws_http <- glue("{aws_http}/OpenUrban/{city_name}")
 
-source_python(here("get-data.py"))
+source_python(here("get_data.py"))
 
 # Add the Python script folder to sys.path
 script_dir <- here()  

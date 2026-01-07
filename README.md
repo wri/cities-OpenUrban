@@ -26,10 +26,10 @@ gcloud config set project citiesindicators
 gcloud auth application-default set-quota-project citiesindicators
 ```
 
-Run the `get-data.py` script to fetch the data for a specific city.
+Run the `get_data.py` script to fetch the data for a specific city.
 
 ```bash
-python get-data.py
+python get_data.py
 ```
 
 Note: GEE uses `nearest-neighbor` when resample by default.  https://developers.google.com/earth-engine/apidocs/ee-image-resample
