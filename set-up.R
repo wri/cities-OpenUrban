@@ -40,7 +40,7 @@ use_condaenv(env, required = TRUE)
 # boto3.Session = _patched_Session
 # ")
 # 
-# py_run_file("get-data.py")
+# py_run_file("get_data.py")
 # 
 
 # Run in python
@@ -51,4 +51,4 @@ use_condaenv(env, required = TRUE)
 # export EARTHENGINE_PROJECT=wri-earthengine
 
 # conda <- conda_binary()
-# system2(conda, c("run", "-n", "open-urban", "python", "~/Documents/github/cities-OpenUrban/get-data.py"))
+# system2(conda, c("run", "-n", "open-urban", "python", "~/Documents/github/cities-OpenUrban/get_data.py"))

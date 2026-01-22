@@ -159,9 +159,13 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Data files
+# R files
 .Rproj.user
 .Rhistory
+.RData
+.Renviron
+
+# Data files
 /data
 
 # Misc.

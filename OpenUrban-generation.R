@@ -150,7 +150,7 @@ if (!dir.exists(city_path)) {dir.create(city_path)}
 
 open_urban_aws_http <- glue("{aws_http}/OpenUrban/{city_name}")
 
-source_python(here("get-data.py"))
+source_python(here("get_data.py"))
 
 # Add the Python script folder to sys.path
 script_dir <- here()  
@@ -525,6 +525,21 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
   )
   
   
+  library(here)
+  Sys.getenv(c("GOOGLE_APPLICATION_USER","GOOGLE_APPLICATION_CREDENTIALS"))
+  
+  gee_args <- c(
+    "--local-file", local_file,
+    "--collection-id", "projects/wri-datalab/cities/OpenUrban/OpenUrban_LULC",
+    "--city_name", city_name,
+    "--gridcell_id", gridcell_id,
+    "--version", version,
+    "--overwrite"
+  )
+
+  system2(here("./upload_gee.py"), args = gee_args)
+          
+          
   print("LULC raster saved")
   
 }
