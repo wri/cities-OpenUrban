@@ -1,5 +1,5 @@
-
 import os
+import argparse
 import numpy as np
 
 from city_metrix.metrix_model import GeoExtent
@@ -13,8 +13,6 @@ from utils.grid import create_grid_for_city
 import os, glob
 import geopandas as gpd
 import pandas as pd
-
-
 
 
 def get_data(city, output_base="."):
@@ -130,6 +128,21 @@ def get_data(city, output_base="."):
         
     merge_building_tiles(city, data_path=data_path, keep_tiles=True, copy_to_s3=True)
 
-# if __name__ == '__main__':
-#     main()
+def _parse_args():
+    parser = argparse.ArgumentParser(description="Fetch and process city data.")
+    parser.add_argument("city", help="City identifier, e.g. ZAF-Durban")
+    parser.add_argument(
+        "--output-base",
+        default=".",
+        help="Base directory for output data (default: current directory).",
+    )
+    return parser.parse_args()
 
+
+def main():
+    args = _parse_args()
+    get_data(args.city, output_base=args.output_base)
+
+
+if __name__ == "__main__":
+    main()

@@ -15,9 +15,14 @@ geojsonio
 
 # Get data
 ## Setup
+### Python environment
 ```
 conda env create -f environment.yml
 conda activate open-urban
+```
+### AWS + GEE authentication
+NOTE: On ec2 instance you don't need to do this step.
+```
 export AWS_PROFILE=cities-data-dev
 aws sso login
 aws s3 ls # test you are logged in

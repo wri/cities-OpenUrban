@@ -7,7 +7,7 @@ def to_s3(file_path, data_path):
     Upload a local file to an S3 bucket, maintaining the relative path from './data'.
     """
     # Create a session using a specific profile
-    session = boto3.Session(profile_name='CitiesUserPermissionSet')
+    session = boto3.Session()
     s3 = session.client("s3")
     
     bucket="wri-cities-heat"
