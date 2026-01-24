@@ -1,8 +1,8 @@
 library(terra)
 # library(osmdata)
-library(rgee)
-library(gfcanalysis)
-library(googledrive)
+# library(rgee)
+# library(gfcanalysis)
+# library(googledrive)
 library(sf)
 library(here)
 library(tidyverse)
@@ -10,23 +10,26 @@ library(tidyverse)
 library(glue)
 library(geoarrow)
 library(sfarrow)
-library(googleCloudStorageR)
+# library(googleCloudStorageR)
 
-library(reticulate)
-use_condaenv("chri", required = TRUE)
+# library(reticulate)
+# # use_condaenv("open-urban", required = TRUE)
+# use_python("/home/ubuntu/.conda/envs/open-urban/bin/python", required = TRUE)
+# py_config()
+
 
 # S3 setup ----------------------------------------------------------------
 
 
 # 1) Log in via AWS SSO for that profile (opens browser)
-system("aws sso login --profile cities-data-dev")
-
-# 2) Point this R/reticulate session at that profile & region
-Sys.setenv(
-  AWS_SDK_LOAD_CONFIG = "1",      # make boto3 read ~/.aws/config
-  AWS_PROFILE = "cities-data-dev",
-  AWS_DEFAULT_REGION = "us-east-1"
-)
+# system("aws sso login --profile cities-data-dev")
+# 
+# # 2) Point this R/reticulate session at that profile & region
+# Sys.setenv(
+#   AWS_SDK_LOAD_CONFIG = "1",      # make boto3 read ~/.aws/config
+#   AWS_PROFILE = "cities-data-dev",
+#   AWS_DEFAULT_REGION = "us-east-1"
+# )
 
 s3 <- paws::s3()
 bucket <- "wri-cities-heat"
@@ -86,77 +89,97 @@ write_s3 <- function(obj, file_path) {
 
 
 # Rgee setup -------------------------------------------------------------
-py_run_file(here("utils", "rgee.py"))
-ee_Initialize(project = "ee-ssc-lulc", drive = TRUE, quiet = TRUE)
-Sys.setenv(EARTHENGINE_PROJECT = "ee-ssc-lulc")
+# py_run_file(here("utils", "rgee.py"))
+# ee_Initialize(project = "ee-ssc-lulc", drive = TRUE, quiet = TRUE)
+# Sys.setenv(EARTHENGINE_PROJECT = "ee-ssc-lulc")
+# 
+# gcs_auth("/Users/elizabeth.wesley/Documents/keys/nifty-memory-399115-7aa7f647b0b0.json")  
+# Sys.setenv(GCS_DEFAULT_BUCKET = "wri-cities-lulc-gee")
+# gcs_global_bucket("wri-cities-lulc-gee")  
+# googleCloudStorageR::gcs_upload_set_limit(as.integer(2.5e+7))  
 
-gcs_auth("/Users/elizabeth.wesley/Documents/keys/nifty-memory-399115-7aa7f647b0b0.json")  
-Sys.setenv(GCS_DEFAULT_BUCKET = "wri-cities-lulc-gee")
-gcs_global_bucket("wri-cities-lulc-gee")  
-googleCloudStorageR::gcs_upload_set_limit(as.integer(2.5e+7))  
-
-gcs_upload_until_success <- function(file,
-                                     bucket,
-                                     name = basename(file),
-                                     type = "image/tiff",
-                                     verbose = TRUE) {
-  stopifnot(file.exists(file))
-  
-  # make sure package is loaded
-  if (!"googleCloudStorageR" %in% .packages()) {
-    suppressPackageStartupMessages(require(googleCloudStorageR))
-  }
-  
-  # 1) raise the resumable limit ABOVE your file size
-  #    50 MB is fine; must be integer
-  googleCloudStorageR::gcs_upload_set_limit(as.integer(50 * 1024^2))
-  
-  attempt <- 1L
-  wait <- 2
-  
-  repeat {
-    res <- tryCatch(
-      googleCloudStorageR::gcs_upload(
-        file = file,
-        bucket = bucket,
-        name = name,
-        type = type,
-        upload_type = "simple"   # <-- force simple here
-      ),
-      error = function(e) e
-    )
-    
-    if (!inherits(res, "error")) {
-      if (verbose) message("✅ upload succeeded on attempt ", attempt)
-      return(res)
-    }
-    
-    # otherwise, we retry forever
-    if (verbose) {
-      message("❌ attempt ", attempt, " failed: ", conditionMessage(res))
-      message("⏳ retrying in ", wait, "s (Ctrl+C to stop)")
-    }
-    Sys.sleep(wait)
-    wait <- min(wait * 1.5, 30)
-    attempt <- attempt + 1L
-  }
-}
+# gcs_upload_until_success <- function(file,
+#                                      bucket,
+#                                      name = basename(file),
+#                                      type = "image/tiff",
+#                                      verbose = TRUE) {
+#   stopifnot(file.exists(file))
+#   
+#   # make sure package is loaded
+#   if (!"googleCloudStorageR" %in% .packages()) {
+#     suppressPackageStartupMessages(require(googleCloudStorageR))
+#   }
+#   
+#   # 1) raise the resumable limit ABOVE your file size
+#   #    50 MB is fine; must be integer
+#   googleCloudStorageR::gcs_upload_set_limit(as.integer(50 * 1024^2))
+#   
+#   attempt <- 1L
+#   wait <- 2
+#   
+#   repeat {
+#     res <- tryCatch(
+#       googleCloudStorageR::gcs_upload(
+#         file = file,
+#         bucket = bucket,
+#         name = name,
+#         type = type,
+#         upload_type = "simple"   # <-- force simple here
+#       ),
+#       error = function(e) e
+#     )
+#     
+#     if (!inherits(res, "error")) {
+#       if (verbose) message("✅ upload succeeded on attempt ", attempt)
+#       return(res)
+#     }
+#     
+#     # otherwise, we retry forever
+#     if (verbose) {
+#       message("❌ attempt ", attempt, " failed: ", conditionMessage(res))
+#       message("⏳ retrying in ", wait, "s (Ctrl+C to stop)")
+#     }
+#     Sys.sleep(wait)
+#     wait <- min(wait * 1.5, 30)
+#     attempt <- attempt + 1L
+#   }
+# }
 
 ####
 
-city_name <- "BRA-Fortaleza"
+city_name <- "NLD-Rotterdam"
 city_path <- here("data", city_name)
 if (!dir.exists(city_path)) {dir.create(city_path)}
 
 open_urban_aws_http <- glue("{aws_http}/OpenUrban/{city_name}")
 
-source_python(here("get_data.py"))
+extent <- st_read("https://wri-cities-indicators.s3.us-east-1.amazonaws.com/data/published/layers/UrbanExtents/geojson/NLD-Rotterdam__urban_extent__UrbanExtents__StartYear_2020_EndYear_2020.geojson")
+if (!dir.exists(here(city_path, "boundaries"))) {dir.create(here(city_path, "boundaries"))}
+boundary_path <- here(city_path, "boundaries", "city_polygon.geojson")
+if (!file.exists(boundary_path)) {st_write(extent, boundary_path)}
 
-# Add the Python script folder to sys.path
-script_dir <- here()  
-py_run_string(sprintf("import sys; sys.path.append('%s')", script_dir))
-get_data(city_name)
+# Get data
 
+# Define your parameters
+env_name <- "open-urban"
+script_path <- "get_data.py"
+script_args <- city_name
+
+# Combine 'run', the environment name, 'python', the script, and its arguments
+args <- c("run", "-n", env_name, "python", script_path, script_args)
+
+# Execute via system2
+response <- system2(
+  command = "/home/ubuntu/miniconda3/condabin/conda", 
+  args = args, 
+  stdout = TRUE,   
+  stderr = TRUE    
+)
+
+# Print output
+print(response)
+
+# Load the grid
 grid <- st_read(glue("{open_urban_aws_http}/city_grid/city_grid.geojson"))
 
 create_lulc_tile <- function(gridcell_id, city_name, city_path){
@@ -193,17 +216,9 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
   
   # Open space ####
   # Load
-  # open_space <- st_read(glue("{city_path}/open_space/open_space_{gridcell_id}.geojson")) %>% 
-  #   st_make_valid() %>%
-  #   st_collection_extract("POLYGON") %>%
-  #   st_cast("POLYGON", warn = FALSE)
-  # open_space_path <- glue("{city_path}/open_space/open_space_all.geojson")
-  # open_space <- vect(open_space_path, extent = bb) %>% 
-  #   st_as_sf() 
   open_space <- sfarrow::st_read_parquet(
-    glue("{open_urban_aws_http}/open_space/open_space_all.parquet"),
-    wkt_filter = st_as_text(bb),   
-    quiet = TRUE) %>% 
+      glue("{open_urban_aws_http}/open_space/open_space_all.parquet"),
+      quiet = TRUE) %>% 
     st_transform(utm) %>% 
     st_filter(bb)
   
@@ -223,14 +238,10 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
   
   # Water ####
   # Load
-  # water_path <- glue("{city_path}/water/water_all.geojson")
-  # water <- vect(water_path, extent = bb) %>% 
-  #   st_as_sf() 
-  
   water <- sfarrow::st_read_parquet(
-    glue("{open_urban_aws_http}/water/water_all.parquet"),
-    wkt_filter = st_as_text(bb),   
-    quiet = TRUE) %>% 
+      glue("{open_urban_aws_http}/water/water_all.parquet"),
+      wkt_filter = st_as_text(bb),   
+      quiet = TRUE) %>% 
     st_transform(utm) %>% 
     st_filter(bb)
   
@@ -250,15 +261,10 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
   
   
   # Roads ####
-  # Load
-  # roads_path <- glue("{open_urban_aws_http}/roads/roads_all.parquet")
-  # # roads_path <- glue("{city_path}/roads/roads_all.geojson")
-  # roads <- vect(roads_path, extent = bb) %>% 
-  #   st_as_sf() 
   roads <- sfarrow::st_read_parquet(
-    glue("{open_urban_aws_http}/roads/roads_all.parquet"),
-    wkt_filter = st_as_text(bb),   
-    quiet = TRUE) %>% 
+      glue("{open_urban_aws_http}/roads/roads_all.parquet"),
+      wkt_filter = st_as_text(bb),   
+      quiet = TRUE) %>% 
     st_transform(utm) %>% 
     st_filter(bb)
   
@@ -303,11 +309,6 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
   
   # Buildings ####
   # Load
-  # buildings_path <- glue("{city_path}/buildings/buildings_all.geojson")
-  # buildings <- vect(buildings_path, extent = (bb %>% st_transform(4326))) %>% 
-  #   st_as_sf() 
-  # buildings <- st_read(buildings_path) 
-  
   buildings <- sfarrow::st_read_parquet(
     glue("{open_urban_aws_http}/buildings/buildings_{gridcell_id}.parquet"),
     quiet = TRUE) 
@@ -363,21 +364,31 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
       buildings <- buildings %>% 
         add_column(ANBH = avg_ht)
       
-      # TODO
-      # Reproject to local state plane and calculate area
-      ######### This is not correct
-      ######### should be Area_m = Area_ft / 10.764
+      # Reproject to UTM and calculate area
       buildings <- buildings %>% 
         st_transform(utm) %>% 
-        mutate(Area_ft = as.numeric(st_area(.)),
-               Area_m = Area_ft / 3.281,
+        mutate(Area_m = as.numeric(st_area(.)),
                ULU = as.factor(ULU),
                ULU = droplevels(replace(ULU, ULU == "0", NA)))
       
-      tree <- readRDS("~/Desktop/LULC-SSC/V2-building-class-tree.rds")
+      classify_slope <- function(buildings) {
+        buildings %>%
+          mutate(
+            Slope = case_when(
+              # Residential -> High slope
+              ULU == 2 ~ "high",
+              
+              # Non-residential: split on area
+              ULU == 1 & Area_m < 1034 ~ if_else(ANBH < 11, "high", "low"),
+              ULU == 1 & Area_m >= 1034 ~ "low",
+              
+              # Anything else / missing
+              TRUE ~ NA_character_
+            )
+          )
+      }
       
-      buildings <- buildings %>% 
-        add_column(Slope = predict(tree, newdata = buildings, type = "class")) 
+      buildings <- classify_slope(buildings)
       
       # For V3 reserve single digit space for classification
       buildings <- buildings %>% 
@@ -490,56 +501,70 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
               parking_rast, na.rm = TRUE)
   
   writeRaster(x = LULC, 
-              filename = here("temp", "LULC.tif"),
+              filename = here("tmp", "LULC.tif"),
               overwrite = TRUE,
               datatype = 'INT2U',
               gdal = c("BLOCKXSIZE=512", "BLOCKYSIZE=512"))
   
-  local_file <- here("temp", "LULC.tif")
+  local_file <- here("tmp", "LULC.tif")
   
-  obj <- gcs_upload_until_success(
-    file = local_file,
-    bucket = "wri-cities-lulc-gee",
-    name = basename(local_file)
-  )
-  
-  gs_uri <- sprintf("gs://%s/%s", gcs_get_global_bucket(), obj$name)
-  
-  assetID <- glue("projects/earthengine-legacy/assets/projects/wri-datalab/cities/OpenUrban/OpenUrban_LULC/ 
-                      {city_name}_{gridcell_id}")
+  # assetID <- glue("projects/earthengine-legacy/assets/projects/wri-datalab/cities/OpenUrban/OpenUrban_LULC/ 
+  #                     {city_name}_{gridcell_id}")
   
   properties <- list(city = city_name, 
                      grid_cell = gridcell_id, 
                      version = version,
                      start_time = format(Sys.Date(), "%F"))
   
-  # 3. Create an Image Manifest
-  manifest <- ee_utils_create_manifest_image(gs_uri, 
-                                             assetID,
-                                             properties = properties)
-  
-  # 4. From GCS to Earth Engine
-  gcs_to_ee_image(
-    manifest = manifest,
-    overwrite = TRUE
-  )
-  
-  
-  library(here)
-  Sys.getenv(c("GOOGLE_APPLICATION_USER","GOOGLE_APPLICATION_CREDENTIALS"))
+  # Sys.getenv(c("GOOGLE_APPLICATION_USER","GOOGLE_APPLICATION_CREDENTIALS"))
   
   gee_args <- c(
     "--local-file", local_file,
-    "--collection-id", "projects/wri-datalab/cities/OpenUrban/OpenUrban_LULC",
-    "--city_name", city_name,
-    "--gridcell_id", gridcell_id,
+    "--collection-id", "projects/wri-datalab/cities/OpenUrban/test",
+    "--city-name", city_name,
+    "--gridcell-id", gridcell_id,
     "--version", version,
     "--overwrite"
   )
 
   system2(here("./upload_gee.py"), args = gee_args)
-          
-          
+  
+  # Define your parameters
+  env_name <- "open-urban"
+  script_path <- "upload_gee.py"
+  
+  # Combine 'run', the environment name, 'python', the script, and its arguments
+  args <- c("run", "-n", env_name, "python", script_path, gee_args)
+  
+  # Execute via system2
+  response <- system2(
+    command = "/home/ubuntu/miniconda3/condabin/conda", 
+    args = args, 
+    stdout = TRUE,   
+    stderr = TRUE    
+  )
+  
+  # Print output
+  print(response)
+  
+  conda <- "/home/ubuntu/miniconda3/condabin/conda"
+  script_path <- normalizePath("upload_gee.py")
+  
+  gee_args <- c(
+    "--gcs-bucket", "wri-cities-gee-imports",
+    "--local-file", local_file,
+    "--collection-id", "projects/wri-datalab/cities/OpenUrban/test",
+    "--city-name", city_name,
+    "--gridcell-id", gridcell_id,
+    "--version", version,
+    "--overwrite"
+  )
+  
+  args <- c("run", "-n", "open-urban", "python", script_path, gee_args)
+  
+  response <- system2(conda, args, stdout = TRUE, stderr = TRUE)
+  cat(response, sep = "\n")
+  
   print("LULC raster saved")
   
 }
