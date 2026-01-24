@@ -144,7 +144,7 @@ gcs_upload_until_success <- function(file,
 
 ####
 
-city_name <- "BRA-Fortaleza"
+
 city_path <- here("data", city_name)
 if (!dir.exists(city_path)) {dir.create(city_path)}
 
@@ -155,7 +155,6 @@ source_python(here("get_data.py"))
 # Add the Python script folder to sys.path
 script_dir <- here()  
 py_run_string(sprintf("import sys; sys.path.append('%s')", script_dir))
-get_data(city_name)
 
 grid <- st_read(glue("{open_urban_aws_http}/city_grid/city_grid.geojson"))
 
@@ -369,15 +368,28 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
       ######### should be Area_m = Area_ft / 10.764
       buildings <- buildings %>% 
         st_transform(utm) %>% 
-        mutate(Area_ft = as.numeric(st_area(.)),
-               Area_m = Area_ft / 3.281,
+        mutate(Area_m = as.numeric(st_area(.)),
                ULU = as.factor(ULU),
                ULU = droplevels(replace(ULU, ULU == "0", NA)))
       
-      tree <- readRDS("~/Desktop/LULC-SSC/V2-building-class-tree.rds")
+      classify_slope <- function(buildings) {
+        buildings %>%
+          mutate(
+            Slope = case_when(
+              # Residential -> High slope
+              ULU == 2 ~ "high",
+              
+              # Non-residential: split on area
+              ULU == 1 & Area_m < 1034 ~ if_else(ANBH < 11, "high", "low"),
+              ULU == 1 & Area_m >= 1034 ~ "low",
+              
+              # Anything else / missing
+              TRUE ~ NA_character_
+            )
+          )
+      }
       
-      buildings <- buildings %>% 
-        add_column(Slope = predict(tree, newdata = buildings, type = "class")) 
+      buildings <- classify_slope(buildings)
       
       # For V3 reserve single digit space for classification
       buildings <- buildings %>% 
