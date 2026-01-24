@@ -1,21 +1,11 @@
 library(terra)
-# library(osmdata)
-# library(rgee)
-# library(gfcanalysis)
-# library(googledrive)
 library(sf)
 library(here)
 library(tidyverse)
-# library(aws.s3)
 library(glue)
 library(geoarrow)
 library(sfarrow)
-# library(googleCloudStorageR)
 
-# library(reticulate)
-# # use_condaenv("open-urban", required = TRUE)
-# use_python("/home/ubuntu/.conda/envs/open-urban/bin/python", required = TRUE)
-# py_config()
 
 
 # S3 setup ----------------------------------------------------------------
@@ -35,115 +25,8 @@ s3 <- paws::s3()
 bucket <- "wri-cities-heat"
 aws_http <- "https://wri-cities-heat.s3.us-east-1.amazonaws.com"
 
-write_s3 <- function(obj, file_path) {
-  s3_uri <- glue::glue("s3://{file_path}")
-  
-  # parse bucket/key
-  p   <- sub("^s3://", "", s3_uri)
-  bkt <- sub("/.*", "", p)
-  key <- sub("^[^/]+/", "", p)
-  ext <- tolower(tools::file_ext(key))
-  tmp <- tempfile(fileext = paste0(".", ext))
-  
-  # choose writer + content-type
-  if (ext %in% c("parquet", "geoparquet", "pq")) {
-    # write Parquet / GeoParquet
-    if (inherits(obj, "sf") || inherits(obj, "sfc")) {
-      if (inherits(obj, "sfc")) obj <- sf::st_as_sf(obj)
-      if (!requireNamespace("sfarrow", quietly = TRUE))
-        stop("Package 'sfarrow' is required to write GeoParquet.")
-      sfarrow::st_write_parquet(obj, tmp)
-    } else {
-      if (!requireNamespace("arrow", quietly = TRUE))
-        stop("Package 'arrow' is required to write Parquet.")
-      arrow::write_parquet(as.data.frame(obj), tmp)
-    }
-    ctype <- "application/vnd.apache.parquet"
-    
-  } else if (inherits(obj, "sf") || inherits(obj, "sfc")) {
-    # vector data (e.g., GeoJSON, GPKG, etc.)
-    if (inherits(obj, "sfc")) obj <- sf::st_as_sf(obj)
-    sf::st_write(obj, tmp, delete_dsn = TRUE, quiet = TRUE)
-    ctype <- if (ext %in% c("geojson","json")) "application/geo+json" else "application/octet-stream"
-    
-  } else if (inherits(obj, "SpatRaster")) {
-    # raster data
-    terra::writeRaster(obj, tmp, overwrite = TRUE)
-    ctype <- if (ext %in% c("tif","tiff")) "image/tiff" else "application/octet-stream"
-    
-  } else if (ext == "csv") {
-    # tabular CSV
-    readr::write_csv(obj, file = tmp)
-    ctype <- "text/csv"
-    
-  } else {
-    stop("Unsupported extension: ", ext)
-  }
-  
-  # upload
-  raw <- readBin(tmp, "raw", file.info(tmp)$size)
-  s3$put_object(Bucket = bkt, Key = key, Body = raw, ContentType = ctype)
-  unlink(tmp)
-  invisible(s3_uri)
-}
-
-
-# Rgee setup -------------------------------------------------------------
-# py_run_file(here("utils", "rgee.py"))
-# ee_Initialize(project = "ee-ssc-lulc", drive = TRUE, quiet = TRUE)
-# Sys.setenv(EARTHENGINE_PROJECT = "ee-ssc-lulc")
-# 
-# gcs_auth("/Users/elizabeth.wesley/Documents/keys/nifty-memory-399115-7aa7f647b0b0.json")  
-# Sys.setenv(GCS_DEFAULT_BUCKET = "wri-cities-lulc-gee")
-# gcs_global_bucket("wri-cities-lulc-gee")  
-# googleCloudStorageR::gcs_upload_set_limit(as.integer(2.5e+7))  
-
-# gcs_upload_until_success <- function(file,
-#                                      bucket,
-#                                      name = basename(file),
-#                                      type = "image/tiff",
-#                                      verbose = TRUE) {
-#   stopifnot(file.exists(file))
-#   
-#   # make sure package is loaded
-#   if (!"googleCloudStorageR" %in% .packages()) {
-#     suppressPackageStartupMessages(require(googleCloudStorageR))
-#   }
-#   
-#   # 1) raise the resumable limit ABOVE your file size
-#   #    50 MB is fine; must be integer
-#   googleCloudStorageR::gcs_upload_set_limit(as.integer(50 * 1024^2))
-#   
-#   attempt <- 1L
-#   wait <- 2
-#   
-#   repeat {
-#     res <- tryCatch(
-#       googleCloudStorageR::gcs_upload(
-#         file = file,
-#         bucket = bucket,
-#         name = name,
-#         type = type,
-#         upload_type = "simple"   # <-- force simple here
-#       ),
-#       error = function(e) e
-#     )
-#     
-#     if (!inherits(res, "error")) {
-#       if (verbose) message("✅ upload succeeded on attempt ", attempt)
-#       return(res)
-#     }
-#     
-#     # otherwise, we retry forever
-#     if (verbose) {
-#       message("❌ attempt ", attempt, " failed: ", conditionMessage(res))
-#       message("⏳ retrying in ", wait, "s (Ctrl+C to stop)")
-#     }
-#     Sys.sleep(wait)
-#     wait <- min(wait * 1.5, 30)
-#     attempt <- attempt + 1L
-#   }
-# }
+# Load write_s3
+source(here("utils", "write-s3.R"))
 
 ####
 
