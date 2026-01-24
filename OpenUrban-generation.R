@@ -147,7 +147,6 @@ write_s3 <- function(obj, file_path) {
 
 ####
 
-city_name <- "NLD-Rotterdam"
 city_path <- here("data", city_name)
 if (!dir.exists(city_path)) {dir.create(city_path)}
 
