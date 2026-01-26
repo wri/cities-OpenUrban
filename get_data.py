@@ -33,8 +33,14 @@ def get_data(city, output_base="."):
     crs = 'EPSG:4326'
     
     # Download vector data
-    minx, miny, maxx, maxy = city_polygon.total_bounds  
-    bbox = GeoExtent(bbox=[minx, miny, maxx, maxy])
+    
+    # Create the grid for the city -------------------------------------------------
+    # City grid is in UTM
+    city_grid = create_grid_for_city(city, city_polygon, data_path=data_path, copy_to_s3=True)
+    city_grid_4326 = city_grid.to_crs("EPSG:4326")
+
+    minx, miny, maxx, maxy = city_grid_4326.total_bounds
+    bbox = GeoExtent(bbox=(minx, miny, maxx, maxy), crs="EPSG:4326")
     
     get_roads(city, bbox, grid_cell_id = "all",  data_path=data_path, copy_to_s3=True)
     get_open_space(city, bbox, grid_cell_id = "all",  data_path=data_path, copy_to_s3=True)
@@ -43,9 +49,6 @@ def get_data(city, output_base="."):
     get_parking(city, bbox, grid_cell_id = "all",  data_path=data_path, copy_to_s3=True)
     
     summarize_average_lanes(city, data_path=data_path, copy_to_s3=True)
-
-    # Create the grid for the city -------------------------------------------------
-    city_grid = create_grid_for_city(city, city_polygon, data_path=data_path, copy_to_s3=True)
 
     # Get existing city grid from file
 
@@ -70,23 +73,22 @@ def get_data(city, output_base="."):
         
         for idx, cell in city_grid.iterrows():
             grid_cell_id = cell['ID']
-            geometry = cell['geometry']
+            print(f"Preparing tasks for grid cell {grid_cell_id}")
+            
             # Get the bounding box of the cell
+            geometry = cell['geometry']
             bbox = GeoExtent(bbox=geometry.bounds)
             
-            geographic_box = bbox.as_geographic_bbox()
-            geographic_bbox_str = ','.join(map(str, geographic_box.bounds))
-            print(f"Preparing tasks for grid cell {grid_cell_id} with bbox: {geographic_bbox_str}")
+            # Buffered bbox
+            bbox_fetch = bbox.buffer_utm_bbox(2)
+            # Buffered bbox back in 4326 for vector APIs that require lon/lat
+            bbox_fetch_4326 = bbox_fetch_utm.as_geographic_bbox()
             
             # Create all data fetching tasks for this cell
-            # roads_task = delayed(get_roads)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
-            # open_space_task = delayed(get_open_space)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
-            # water_task = delayed(get_water)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
-            buildings_task = delayed(get_buildings)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=True)
-            urban_land_use_task = delayed(get_urban_land_use)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=False)
-            esa_task = delayed(get_esa)(city, bbox, grid_cell_id=grid_cell_id, data_path=data_path, copy_to_s3=False)
-            anbh_task = delayed(get_anbh)(city, bbox, grid_cell_id=grid_cell_id, data_path=data_path, copy_to_s3=False)
-            # parking_task = delayed(get_parking)(city, bbox, grid_cell_id, data_path=data_path, copy_to_s3=copy_to_s3)
+            buildings_task = delayed(get_buildings)(city, bbox_fetch_4326, grid_cell_id, data_path=data_path, copy_to_s3=True)
+            urban_land_use_task = delayed(get_urban_land_use)(city, bbox_fetch, grid_cell_id, data_path=data_path, copy_to_s3=False)
+            esa_task = delayed(get_esa)(city, bbox_fetch, grid_cell_id=grid_cell_id, data_path=data_path, copy_to_s3=False)
+            anbh_task = delayed(get_anbh)(city, bbox_fetch, grid_cell_id=grid_cell_id, data_path=data_path, copy_to_s3=False)
 
             # Add all tasks to the master list
             all_tasks.extend([buildings_task, urban_land_use_task, esa_task, anbh_task])

@@ -267,7 +267,7 @@ def get_parking(city, bbox, grid_cell_id, data_path, copy_to_s3=False, compressi
     if copy_to_s3:
         to_s3(parking_file, data_path)
 
-def get_buildings(city, bbox, grid_cell_id, data_path, copy_to_s3=False, compression="snappy"):
+def get_buildings(city, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False, compression="snappy"):
     """Fetch Overture buildings → GeoParquet."""
     buildings_path = f"{data_path}/{city}/buildings"
     buildings_file = f"{buildings_path}/buildings_{grid_cell_id}.parquet"
@@ -363,7 +363,7 @@ def merge_building_tiles(city, data_path, keep_tiles=False, copy_to_s3=False, co
     if copy_to_s3:
         to_s3(out_path, data_path)
 
-def get_urban_land_use(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
+def get_urban_land_use(city, bbox, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False):
     """
     Fetches the urban land use data for the specified city and grid cell.
 
@@ -382,7 +382,8 @@ def get_urban_land_use(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
         print(f"Urban land use data already exists at {urban_land_use_file}, skipping fetch.")
     else:
         print(f"Fetching urban land use data for {city}...")
-        urban_land_use = UrbanLandUse().get_data(bbox)
+        urban_land_use = UrbanLandUse().get_data(bbox_fetch)
+        urban_land_use = extract_bbox_aoi(urban_land_use, bbox)            # trim to original tile extent
 
         # Create urban land use folder if it doesn't exist
         if not os.path.exists(urban_land_use_path):
@@ -395,7 +396,7 @@ def get_urban_land_use(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
             to_s3(urban_land_use_file, data_path)
 
 
-def get_esa(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
+def get_esa(city, bbox, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False):
     """
     Fetches the ESA land cover data for the specified city and grid cell.
     
@@ -417,7 +418,7 @@ def get_esa(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
         print(f"Fetching ESA LULC data for {city}...")
         # Check if all pixels are water (value 80 in ESA WorldCover)
         # If so, skip this tile
-        esa = EsaWorldCover().get_data(bbox, spatial_resolution=10)
+        esa = EsaWorldCover().get_data(bbox_fetch, spatial_resolution=10)
         esa_unique_values = np.unique(esa.values)
         esa_unique_values = esa_unique_values[~np.isnan(esa_unique_values)]  # Remove NaN values
         
@@ -425,7 +426,8 @@ def get_esa(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
         if len(esa_unique_values) == 1 and esa_unique_values[0] == 80:
             print(f"Cell {grid_cell_id} is all water, skipping...")
         else:
-            esa = EsaWorldCover().get_data(bbox, spatial_resolution=1)
+            esa = EsaWorldCover().get_data(bbox_fetch, spatial_resolution=1)
+            esa = extract_bbox_aoi(esa, bbox)
 
             if not os.path.exists(esa_path):
                 os.makedirs(esa_path)
@@ -436,7 +438,7 @@ def get_esa(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
             if copy_to_s3:
                 to_s3(esa_file, data_path)
 
-def get_anbh(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
+def get_anbh(city, bbox, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False):
     """
     Fetches the Average Net Building Height data for the specified city and grid cell.
     
@@ -456,7 +458,8 @@ def get_anbh(city, bbox, grid_cell_id, data_path, copy_to_s3=False):
         print(f"ANBH data already exists at {anbh_file}, skipping fetch.")
     else:
         print(f"Fetching ANBH data for {city}...")
-        anbh = AverageNetBuildingHeight().get_data(bbox)
+        anbh = AverageNetBuildingHeight().get_data(bbox_fetch)
+        anbh = extract_bbox_aoi(anbh, bbox)
 
         # Create urban land use folder if it doesn't exist
         if not os.path.exists(anbh_path):
