@@ -29,11 +29,11 @@ aws_http <- "https://wri-cities-heat.s3.us-east-1.amazonaws.com"
 source(here("utils", "write-s3.R"))
 
 ####
-
-city_path <- here("data", city_name)
+city <- "NLD-Rotterdam"
+city_path <- here("data", city)
 if (!dir.exists(city_path)) {dir.create(city_path)}
 
-open_urban_aws_http <- glue("{aws_http}/OpenUrban/{city_name}")
+open_urban_aws_http <- glue("{aws_http}/OpenUrban/{city}")
 
 extent <- st_read("https://wri-cities-indicators.s3.us-east-1.amazonaws.com/data/published/layers/UrbanExtents/geojson/NLD-Rotterdam__urban_extent__UrbanExtents__StartYear_2020_EndYear_2020.geojson")
 if (!dir.exists(here(city_path, "boundaries"))) {dir.create(here(city_path, "boundaries"))}
@@ -45,7 +45,7 @@ if (!file.exists(boundary_path)) {st_write(extent, boundary_path)}
 # Define your parameters
 env_name <- "open-urban"
 script_path <- "get_data.py"
-script_args <- city_name
+script_args <- city
 
 # Combine 'run', the environment name, 'python', the script, and its arguments
 args <- c("run", "-n", env_name, "python", script_path, script_args)
@@ -64,7 +64,7 @@ print(response)
 # Load the grid
 grid <- st_read(glue("{open_urban_aws_http}/city_grid/city_grid.geojson"))
 
-create_lulc_tile <- function(gridcell_id, city_name, city_path){
+create_lulc_tile <- function(gridcell_id, city, city_path){
   
   # ESA ####
   # Load
@@ -113,7 +113,7 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
       rasterize(esa_rast, 
                 field = "Value",
                 background = 0,
-                filename = here("temp", "open_space_1m.tif"),
+                filename = here("tmp", "open_space_1m.tif"),
                 overwrite = TRUE)
   } 
   
@@ -136,7 +136,7 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
       rasterize(esa_rast, 
                 field = "Value",
                 background = 0,
-                filename = here("temp", "water_1m.tif"),
+                filename = here("tmp", "water_1m.tif"),
                 overwrite = TRUE)
   } 
   
@@ -184,7 +184,7 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
     roads %>% rasterize(esa_rast, 
                         field = "Value",
                         background = 0, 
-                        filename = here("temp", "roads_1m.tif"),
+                        filename = here("tmp", "roads_1m.tif"),
                         overwrite = TRUE)
   } 
   
@@ -193,7 +193,8 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
   # Load
   buildings <- sfarrow::st_read_parquet(
     glue("{open_urban_aws_http}/buildings/buildings_{gridcell_id}.parquet"),
-    quiet = TRUE) 
+    quiet = TRUE) %>% 
+    select(id, version)
   
   ulu <- rast(glue("{city_path}/urban_land_use/urban_land_use_{gridcell_id}.tif"))
   
@@ -212,7 +213,7 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
   
   if (nrow(buildings) > 0){
     # If the city is in the U.S. apply the slope classification model
-    if (str_detect(city_name, "USA")){
+    if (str_detect(city, "USA")){
       
       version <- "USA"
       
@@ -287,10 +288,10 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
       # Overwrite building file in with new data
       st_write_parquet(
         obj = buildings,
-        dsn = here("data", city_name, glue("buildings/buildings_{gridcell_id}.parquet"))
+        dsn = here("data", city, glue("buildings/buildings_{gridcell_id}.parquet"))
       )
       
-      write_s3(buildings, glue("{bucket}/OpenUrban/{city_name}/buildings/buildings_{gridcell_id}.parquet"))
+      write_s3(buildings, glue("{bucket}/OpenUrban/{city}/buildings/buildings_{gridcell_id}.parquet"))
       
     } else {
       
@@ -318,17 +319,17 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
       # Overwrite building file in with new data
       st_write_parquet(
         obj = buildings,
-        dsn = here("data", city_name, glue("buildings/buildings_{gridcell_id}.parquet"))
+        dsn = here("data", city, glue("buildings/buildings_{gridcell_id}.parquet"))
       )
       
-      write_s3(buildings, glue("{bucket}/OpenUrban/{city_name}/buildings/buildings_{gridcell_id}.parquet"))
+      write_s3(buildings, glue("{bucket}/OpenUrban/{city}/buildings/buildings_{gridcell_id}.parquet"))
     }
     
     # Create raster
     buildings %>% rasterize(esa_rast, 
                             field = "Value",
                             background = 0,
-                            filename = here("temp", "buildings_1m.tif"),
+                            filename = here("tmp", "buildings_1m.tif"),
                             overwrite = TRUE)
   }
   
@@ -349,29 +350,29 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
       rasterize(esa_rast, 
                 field = "Value",
                 background = 0,
-                filename = here("temp", "parking_1m.tif"),
+                filename = here("tmp", "parking_1m.tif"),
                 overwrite = TRUE)
   } 
   
   # Combine rasters ####
   open_space_rast <- tryCatch(
-    rast(here("temp", "open_space_1m.tif")),
+    rast(here("tmp", "open_space_1m.tif")),
     error = function(e) NULL
   )
   roads_rast <- tryCatch(
-    rast(here("temp", "roads_1m.tif")),
+    rast(here("tmp", "roads_1m.tif")),
     error = function(e) NULL
   )
   water_rast <- tryCatch(
-    rast(here("temp", "water_1m.tif")),
+    rast(here("tmp", "water_1m.tif")),
     error = function(e) NULL
   )
   buildings_rast <- tryCatch(
-    rast(here("temp", "buildings_1m.tif")),
+    rast(here("tmp", "buildings_1m.tif")),
     error = function(e) NULL
   )
   parking_rast <- tryCatch(
-    rast(here("temp", "parking_1m.tif")),
+    rast(here("tmp", "parking_1m.tif")),
     error = function(e) NULL
   )
   
@@ -382,6 +383,7 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
               buildings_rast,
               parking_rast, na.rm = TRUE)
   
+  # Save local tmp file
   writeRaster(x = LULC, 
               filename = here("tmp", "LULC.tif"),
               overwrite = TRUE,
@@ -390,53 +392,15 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
   
   local_file <- here("tmp", "LULC.tif")
   
-  # assetID <- glue("projects/earthengine-legacy/assets/projects/wri-datalab/cities/OpenUrban/OpenUrban_LULC/ 
-  #                     {city_name}_{gridcell_id}")
-  
-  properties <- list(city = city_name, 
-                     grid_cell = gridcell_id, 
-                     version = version,
-                     start_time = format(Sys.Date(), "%F"))
-  
-  # Sys.getenv(c("GOOGLE_APPLICATION_USER","GOOGLE_APPLICATION_CREDENTIALS"))
-  
-  gee_args <- c(
-    "--local-file", local_file,
-    "--collection-id", "projects/wri-datalab/cities/OpenUrban/test",
-    "--city-name", city_name,
-    "--gridcell-id", gridcell_id,
-    "--version", version,
-    "--overwrite"
-  )
-
-  system2(here("./upload_gee.py"), args = gee_args)
-  
-  # Define your parameters
-  env_name <- "open-urban"
-  script_path <- "upload_gee.py"
-  
-  # Combine 'run', the environment name, 'python', the script, and its arguments
-  args <- c("run", "-n", env_name, "python", script_path, gee_args)
-  
-  # Execute via system2
-  response <- system2(
-    command = "/home/ubuntu/miniconda3/condabin/conda", 
-    args = args, 
-    stdout = TRUE,   
-    stderr = TRUE    
-  )
-  
-  # Print output
-  print(response)
-  
+  # Save to GEE
   conda <- "/home/ubuntu/miniconda3/condabin/conda"
   script_path <- normalizePath("upload_gee.py")
   
   gee_args <- c(
     "--gcs-bucket", "wri-cities-gee-imports",
     "--local-file", local_file,
-    "--collection-id", "projects/wri-datalab/cities/OpenUrban/test",
-    "--city-name", city_name,
+    "--collection-id", "projects/wri-datalab/cities/OpenUrban/OpenUrban_LULC",
+    "--city-name", city,
     "--gridcell-id", gridcell_id,
     "--version", version,
     "--overwrite"
@@ -447,13 +411,16 @@ create_lulc_tile <- function(gridcell_id, city_name, city_path){
   response <- system2(conda, args, stdout = TRUE, stderr = TRUE)
   cat(response, sep = "\n")
   
-  print("LULC raster saved")
+  # Save to s3
+  write_s3(LULC, glue("wri-cities-heat/OpenUrban/{city}/OpenUrban/{city}_{gridcell_id}.tif"))
+  
+  print(glue("LULC raster {gridcell_id} of {nrow(grid)} saved"))
   
 }
 
 map(
   grid$ID,
   create_lulc_tile,
-  city_name = city_name,
+  city = city,
   city_path = city_path
 )

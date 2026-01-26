@@ -29,7 +29,8 @@ def setup_gee_gcs(gcs_bucket_name):
 
     storage_client = storage.Client.from_service_account_json(service_account_json)
     
-    EE_CMD = ["uvx", "--from", "earthengine-api", "earthengine",
+    UVX = os.path.expanduser("~/.local/bin/uvx")
+    EE_CMD = [UVX, "--from", "earthengine-api", "earthengine",
     "--service_account_file", os.path.expanduser(service_account_json),
     "--project", gee_project]
 
