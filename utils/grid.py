@@ -107,6 +107,8 @@ import numpy as np
 import geopandas as gpd
 from shapely.geometry import box
 
+from city_metrix.metrix_tools import get_utm_zone_from_latlon_point
+
 from utils.upload import to_s3
 
 HALF_MILE_M = 804.672

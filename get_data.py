@@ -4,6 +4,9 @@ import numpy as np
 
 from city_metrix.metrix_model import GeoExtent
 
+
+
+
 import importlib, utils.download as download
 importlib.reload(download)
 
@@ -16,7 +19,7 @@ import pandas as pd
 
 
 def get_data(city, output_base="."):
-    # city = "ZAF-Durban"
+    city = "NLD-Rotterdam"
     data_path = os.path.join(output_base, "data")
     # copy_to_s3 = True
 
@@ -26,11 +29,11 @@ def get_data(city, output_base="."):
     city_polygon = get_city_polygon(city, data_path=data_path, copy_to_s3=True)
 
     # Get UTM -------------------------------------------------
-    from utils.utm import get_utm
-    utm_info = get_utm(city_polygon)
-    print(f"UTM EPSG: {utm_info['epsg']}, Earth Engine: {utm_info['ee']}")
-    #crs = utm_info['ee']
-    crs = 'EPSG:4326'
+    # from utils.utm import get_utm
+    # utm_info = get_utm(city_polygon)
+    # print(f"UTM EPSG: {utm_info['epsg']}, Earth Engine: {utm_info['ee']}")
+    # #crs = utm_info['ee']
+    # crs = 'EPSG:4326'
     
     # Download vector data
     
@@ -56,10 +59,21 @@ def get_data(city, output_base="."):
     # Check file with https://geojson.io/ or https://mapshaper.org/
 
     # Start a dask client
-    from dask.distributed import Client
+    from dask.distributed import Client, LocalCluster
     from dask import delayed
     import dask
-    client = Client()
+    
+    cluster = LocalCluster(
+        n_workers=1,
+        threads_per_worker=1,
+        processes=True,
+        memory_limit="5GB",
+        dashboard_address=":0",
+        local_directory=f"/tmp/dask-spill-{__import__('os').getuid()}",
+    )
+    
+    client = Client(cluster)
+
 
     # Print Dask client information
     print(f"Dask: {client}")
@@ -76,19 +90,23 @@ def get_data(city, output_base="."):
             print(f"Preparing tasks for grid cell {grid_cell_id}")
             
             # Get the bounding box of the cell
-            geometry = cell['geometry']
-            bbox = GeoExtent(bbox=geometry.bounds)
+            grid_crs = city_grid.crs  # UTM CRS, e.g. "EPSG:32631" etc.
+
+            geometry = cell["geometry"]
+            
+            # tile bbox in UTM (correct)
+            bbox = GeoExtent(bbox=geometry.bounds, crs=grid_crs.srs if hasattr(grid_crs, "srs") else str(grid_crs))
             
             # Buffered bbox
-            bbox_fetch = bbox.buffer_utm_bbox(2)
+            bbox_fetch = bbox.buffer_utm_bbox(10)
             # Buffered bbox back in 4326 for vector APIs that require lon/lat
-            bbox_fetch_4326 = bbox_fetch_utm.as_geographic_bbox()
+            bbox_fetch_4326 = bbox_fetch.as_geographic_bbox()
             
             # Create all data fetching tasks for this cell
             buildings_task = delayed(get_buildings)(city, bbox_fetch_4326, grid_cell_id, data_path=data_path, copy_to_s3=True)
-            urban_land_use_task = delayed(get_urban_land_use)(city, bbox_fetch, grid_cell_id, data_path=data_path, copy_to_s3=False)
-            esa_task = delayed(get_esa)(city, bbox_fetch, grid_cell_id=grid_cell_id, data_path=data_path, copy_to_s3=False)
-            anbh_task = delayed(get_anbh)(city, bbox_fetch, grid_cell_id=grid_cell_id, data_path=data_path, copy_to_s3=False)
+            urban_land_use_task = delayed(get_urban_land_use)(city, bbox, bbox_fetch, grid_cell_id, data_path=data_path, copy_to_s3=False)
+            esa_task = delayed(get_esa)(city, bbox, bbox_fetch, grid_cell_id=grid_cell_id, data_path=data_path, copy_to_s3=False)
+            anbh_task = delayed(get_anbh)(city, bbox, bbox_fetch, grid_cell_id=grid_cell_id, data_path=data_path, copy_to_s3=False)
 
             # Add all tasks to the master list
             all_tasks.extend([buildings_task, urban_land_use_task, esa_task, anbh_task])

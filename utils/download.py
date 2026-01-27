@@ -279,7 +279,7 @@ def get_buildings(city, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False, c
 
     print(f"Fetching buildings data for {city} (cell {grid_cell_id})...")
     try:
-        gdf = OvertureBuildings().get_data(bbox)
+        gdf = OvertureBuildings().get_data(bbox_fetch)
 
         if gdf is None or len(gdf) == 0:
             print(f"No buildings found for grid cell {grid_cell_id}")
@@ -383,14 +383,18 @@ def get_urban_land_use(city, bbox, bbox_fetch, grid_cell_id, data_path, copy_to_
     else:
         print(f"Fetching urban land use data for {city}...")
         urban_land_use = UrbanLandUse().get_data(bbox_fetch)
-        urban_land_use = extract_bbox_aoi(urban_land_use, bbox)            # trim to original tile extent
-
+        
+        # Clip to bbox
+        xmin, ymin, xmax, ymax = bbox.as_utm_bbox().bounds
+        urban_land_use = urban_land_use.rio.clip_box(minx=xmin, miny=ymin, maxx=xmax, maxy=ymax)
+        
         # Create urban land use folder if it doesn't exist
         if not os.path.exists(urban_land_use_path):
             os.makedirs(urban_land_use_path)
 
         # Write raster to tif file
         urban_land_use.rio.to_raster(raster_path=urban_land_use_file)
+        print("save ok")
 
         if copy_to_s3:
             to_s3(urban_land_use_file, data_path)
@@ -427,7 +431,10 @@ def get_esa(city, bbox, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False):
             print(f"Cell {grid_cell_id} is all water, skipping...")
         else:
             esa = EsaWorldCover().get_data(bbox_fetch, spatial_resolution=1)
-            esa = extract_bbox_aoi(esa, bbox)
+            
+            # Clip to bbox
+            xmin, ymin, xmax, ymax = bbox.as_utm_bbox().bounds
+            esa = esa.rio.clip_box(minx=xmin, miny=ymin, maxx=xmax, maxy=ymax)
 
             if not os.path.exists(esa_path):
                 os.makedirs(esa_path)
@@ -459,7 +466,10 @@ def get_anbh(city, bbox, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False):
     else:
         print(f"Fetching ANBH data for {city}...")
         anbh = AverageNetBuildingHeight().get_data(bbox_fetch)
-        anbh = extract_bbox_aoi(anbh, bbox)
+        
+        # Clip to bbox
+        xmin, ymin, xmax, ymax = bbox.as_utm_bbox().bounds
+        anbh = anbh.rio.clip_box(minx=xmin, miny=ymin, maxx=xmax, maxy=ymax)
 
         # Create urban land use folder if it doesn't exist
         if not os.path.exists(anbh_path):

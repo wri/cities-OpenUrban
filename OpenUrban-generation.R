@@ -8,6 +8,8 @@ library(sfarrow)
 
 
 
+
+
 # S3 setup ----------------------------------------------------------------
 
 
@@ -51,15 +53,13 @@ script_args <- city
 args <- c("run", "-n", env_name, "python", script_path, script_args)
 
 # Execute via system2
-response <- system2(
+system2(
   command = "/home/ubuntu/miniconda3/condabin/conda", 
-  args = args, 
-  stdout = TRUE,   
-  stderr = TRUE    
+  args = args   
 )
 
 # Print output
-print(response)
+# print(response)
 
 # Load the grid
 grid <- st_read(glue("{open_urban_aws_http}/city_grid/city_grid.geojson"))
