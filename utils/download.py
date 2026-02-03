@@ -129,29 +129,29 @@ def get_city_polygon(city, data_path, copy_to_s3=False, crs='EPSG:4326'):
 
     if os.path.exists(boundaries_file):
         print(f"City polygon already exists at {boundaries_file}, skipping fetch.")
-        city_polygon = gpd.read_file(boundaries_file).to_crs(crs)
+        city_gdf = gpd.read_file(boundaries_file).to_crs(crs)
     else:
         print(f"Fetching city polygon for {city}...")
         # Create boundaries folder if it doesn't exist
         if not os.path.exists(boundaries_path):
             os.makedirs(boundaries_path)
 
-        city_polygon_url = f'https://wri-cities-data-api.s3.us-east-1.amazonaws.com/data/prd/boundaries/geojson/{city}.geojson'
+        city_polygon_url = f'https://wri-cities-indicators.s3.us-east-1.amazonaws.com/data/published/layers/UrbanExtents/geojson/{city}__urban_extent__UrbanExtents__StartYear_2020_EndYear_2020.geojson'
         city_gdf = gpd.read_file(city_polygon_url).to_crs(crs)
 
         # Keep just the top level city polygon
-        city_polygon = city_gdf[city_gdf['geo_name'] == city_gdf['geo_parent_name']]
+        # city_polygon = city_gdf[city_gdf['geo_name'] == city_gdf['geo_parent_name']]
 
         # Keep just the geometry column
-        city_polygon = city_polygon[['geometry']]
+        city_gdf = city_gdf[['geometry']]
 
         # Save to a GeoJSON file
-        city_polygon.to_file(boundaries_file, driver='GeoJSON')
+        city_gdf.to_file(boundaries_file, driver='GeoJSON')
 
         if copy_to_s3:
             to_s3(boundaries_file, data_path)
 
-    return city_polygon
+    return city_gdf
 
 
 def get_roads(city, bbox, grid_cell_id, data_path, copy_to_s3=False, compression="snappy"):
@@ -178,27 +178,27 @@ def get_roads(city, bbox, grid_cell_id, data_path, copy_to_s3=False, compression
 
 
 
-class OpenUrbanOpenStreetMapClass(Enum):
-    OPEN_SPACE = {
-        'leisure': [
-            'pitch', 
-            'park', 
-            'garden', 
-            'playground', 
-            'nature_reserve', 
-            'golf_course',
-            'common',
-            'dog_park',
-            'recreation_ground',
-            'disc_golf_course'
-            ],
-        'boundary': [
-            'protected_area', 
-            'national_park',
-            'forest_compartment',
-            'forest'
-            ]
-        }
+# class OpenUrbanOpenStreetMapClass(Enum):
+#     OPEN_SPACE = {
+#         'leisure': [
+#             'pitch', 
+#             'park', 
+#             'garden', 
+#             'playground', 
+#             'nature_reserve', 
+#             'golf_course',
+#             'common',
+#             'dog_park',
+#             'recreation_ground',
+#             'disc_golf_course'
+#             ],
+#         'boundary': [
+#             'protected_area', 
+#             'national_park',
+#             'forest_compartment',
+#             'forest'
+#             ]
+#         }
 
 def get_open_space(city, bbox, grid_cell_id, data_path, copy_to_s3=False, compression="snappy"):
     """Fetch OSM open space → GeoParquet."""
@@ -211,7 +211,7 @@ def get_open_space(city, bbox, grid_cell_id, data_path, copy_to_s3=False, compre
         return
 
     print(f"Fetching open space data for {city}...")
-    open_space = OpenStreetMap(osm_class=OpenUrbanOpenStreetMapClass.OPEN_SPACE).get_data(bbox)
+    open_space = OpenStreetMap(osm_class=OpenStreetMapClass.OPEN_SPACE_HEAT).get_data(bbox)
     open_space = keep_only(open_space, allowed=("Polygon", "MultiPolygon"))
 
     if open_space is None or open_space.empty:
@@ -308,7 +308,7 @@ def get_buildings(city, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False, c
             to_s3(buildings_file, data_path)
 
             
-def merge_building_tiles(city, data_path, keep_tiles=False, copy_to_s3=False, compression="snappy"):
+def merge_building_tiles(city, data_path, copy_to_s3=False, compression="snappy"):
     """
     Merge all buildings_*.parquet tiles into buildings_all.parquet.
     """
@@ -351,19 +351,10 @@ def merge_building_tiles(city, data_path, keep_tiles=False, copy_to_s3=False, co
     all_bldg.to_parquet(out_path, index=False, compression=compression)
     print(f"[merge_building_tiles] Wrote {len(all_bldg)} features → {out_path}")
 
-    if not keep_tiles:
-        removed = 0
-        for p in tile_paths:
-            try:
-                os.remove(p); removed += 1
-            except Exception as e:
-                print(f"[merge_building_tiles] Could not remove {p}: {e}")
-        print(f"[merge_building_tiles] Deleted {removed} tile files.")
-
     if copy_to_s3:
         to_s3(out_path, data_path)
 
-def get_urban_land_use(city, bbox, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False):
+def get_urban_land_use(city, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False):
     """
     Fetches the urban land use data for the specified city and grid cell.
 
@@ -384,10 +375,6 @@ def get_urban_land_use(city, bbox, bbox_fetch, grid_cell_id, data_path, copy_to_
         print(f"Fetching urban land use data for {city}...")
         urban_land_use = UrbanLandUse().get_data(bbox_fetch)
         
-        # Clip to bbox
-        xmin, ymin, xmax, ymax = bbox.as_utm_bbox().bounds
-        urban_land_use = urban_land_use.rio.clip_box(minx=xmin, miny=ymin, maxx=xmax, maxy=ymax)
-        
         # Create urban land use folder if it doesn't exist
         if not os.path.exists(urban_land_use_path):
             os.makedirs(urban_land_use_path)
@@ -400,7 +387,7 @@ def get_urban_land_use(city, bbox, bbox_fetch, grid_cell_id, data_path, copy_to_
             to_s3(urban_land_use_file, data_path)
 
 
-def get_esa(city, bbox, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False):
+def get_esa(city, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False):
     """
     Fetches the ESA land cover data for the specified city and grid cell.
     
@@ -431,10 +418,6 @@ def get_esa(city, bbox, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False):
             print(f"Cell {grid_cell_id} is all water, skipping...")
         else:
             esa = EsaWorldCover().get_data(bbox_fetch, spatial_resolution=1)
-            
-            # Clip to bbox
-            xmin, ymin, xmax, ymax = bbox.as_utm_bbox().bounds
-            esa = esa.rio.clip_box(minx=xmin, miny=ymin, maxx=xmax, maxy=ymax)
 
             if not os.path.exists(esa_path):
                 os.makedirs(esa_path)
@@ -445,7 +428,7 @@ def get_esa(city, bbox, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False):
             if copy_to_s3:
                 to_s3(esa_file, data_path)
 
-def get_anbh(city, bbox, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False):
+def get_anbh(city, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False):
     """
     Fetches the Average Net Building Height data for the specified city and grid cell.
     
@@ -466,10 +449,6 @@ def get_anbh(city, bbox, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False):
     else:
         print(f"Fetching ANBH data for {city}...")
         anbh = AverageNetBuildingHeight().get_data(bbox_fetch)
-        
-        # Clip to bbox
-        xmin, ymin, xmax, ymax = bbox.as_utm_bbox().bounds
-        anbh = anbh.rio.clip_box(minx=xmin, miny=ymin, maxx=xmax, maxy=ymax)
 
         # Create urban land use folder if it doesn't exist
         if not os.path.exists(anbh_path):
@@ -497,41 +476,46 @@ def summarize_average_lanes(city, data_path, copy_to_s3=False, default_lanes=2):
     roads_dir = os.path.join(data_path, city, "roads")
     in_parquet = os.path.join(roads_dir, "roads_all.parquet")
     out_csv = os.path.join(roads_dir, "average_lanes.csv")
+    
+    if os.path.exists(out_csv):
+        print(f"Average lanes already exists.")
+        
+    else:
 
-    if not os.path.exists(in_parquet):
-        print(f"[summarize_average_lanes] Not found: {in_parquet}")
-        return
-
-    # Read and drop geometry
-    gdf = gpd.read_parquet(in_parquet)
-    if gdf.empty:
-        print(f"[summarize_average_lanes] Empty parquet: {in_parquet}")
-        # still write a tiny CSV with just header
-        pd.DataFrame(columns=["highway", "avg_lanes"]).to_csv(out_csv, index=False)
+        if not os.path.exists(in_parquet):
+            print(f"[summarize_average_lanes] Not found: {in_parquet}")
+            return
+    
+        # Read and drop geometry
+        gdf = gpd.read_parquet(in_parquet)
+        if gdf.empty:
+            print(f"[summarize_average_lanes] Empty parquet: {in_parquet}")
+            # still write a tiny CSV with just header
+            pd.DataFrame(columns=["highway", "avg_lanes"]).to_csv(out_csv, index=False)
+            if copy_to_s3:
+                to_s3(out_csv, data_path)
+            return
+    
+        df = gdf.drop(columns=[gdf.geometry.name], errors="ignore")
+    
+        # lanes -> numeric
+        lanes = pd.to_numeric(df.get("lanes"), errors="coerce")
+        df = df.assign(lanes_num=lanes)
+    
+        # group and summarize (keep NA 'highway' group to match dplyr behavior)
+        avg = df.groupby("highway", dropna=False)["lanes_num"].mean()
+        avg = np.ceil(avg)  # ceiling of mean
+        # replace NaN means with default
+        avg = avg.fillna(default_lanes).astype(int)
+    
+        out = avg.reset_index().rename(columns={"lanes_num": "avg_lanes"})
+    
+        # If you prefer the NA highway to appear as blank string in CSV:
+        # out["highway"] = out["highway"].fillna("")
+    
+        out.to_csv(out_csv, index=False)
+        print(f"[summarize_average_lanes] Wrote {len(out)} rows → {out_csv}")
+    
         if copy_to_s3:
             to_s3(out_csv, data_path)
-        return
-
-    df = gdf.drop(columns=[gdf.geometry.name], errors="ignore")
-
-    # lanes -> numeric
-    lanes = pd.to_numeric(df.get("lanes"), errors="coerce")
-    df = df.assign(lanes_num=lanes)
-
-    # group and summarize (keep NA 'highway' group to match dplyr behavior)
-    avg = df.groupby("highway", dropna=False)["lanes_num"].mean()
-    avg = np.ceil(avg)  # ceiling of mean
-    # replace NaN means with default
-    avg = avg.fillna(default_lanes).astype(int)
-
-    out = avg.reset_index().rename(columns={"lanes_num": "avg_lanes"})
-
-    # If you prefer the NA highway to appear as blank string in CSV:
-    # out["highway"] = out["highway"].fillna("")
-
-    out.to_csv(out_csv, index=False)
-    print(f"[summarize_average_lanes] Wrote {len(out)} rows → {out_csv}")
-
-    if copy_to_s3:
-        to_s3(out_csv, data_path)
 
