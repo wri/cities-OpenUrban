@@ -81,6 +81,30 @@ make_updated_albedo <- function(city, lulc_int, alb,
   updated
 }
 
+# Normalize by percentile rank
+normalize_percentile <- function(r, probs = seq(0, 1, by = 0.01)) {
+  
+  qs <- quantile(values(r), probs = probs, na.rm = TRUE)
+  
+  classify(
+    r,
+    rcl = cbind(qs[-length(qs)], qs[-1], probs[-1]),
+    include.lowest = TRUE
+  )
+}
+
+# Categorize into 5 levels
+cat5_from_01 <- function(x) {
+  
+  # convert 0–1 to 1–5
+  y <- ceiling(x * 5)
+  
+  # handle edge case where x == 0
+  y[y == 0] <- 1
+  
+  y
+}
+
 # Function to load and merge rasters from a list of paths
 load_and_merge <- function(paths) {
   if (length(paths) == 0) {
@@ -138,6 +162,42 @@ rast_retry <- function(path, attempts = 6, base_sleep = 0.5, quiet = FALSE) {
                attempts, path, conditionMessage(last_err)), call. = FALSE)
 }
 
+# Find albedo folder
+find_city_dataset_folder <- function(s3_parent, city, dataset_stub, profile = "cities-data-dev") {
+  # s3_parent example:
+  # "s3://wri-cities-indicators/data/published/layers/AlbedoCloudMasked__ZonalStats_median/tif/"
+  s3_parent <- sub("/?$", "/", s3_parent)
+  
+  # list "folders" under parent
+  lines <- system2(
+    "aws",
+    c("s3", "ls", s3_parent, "--profile", profile),
+    stdout = TRUE,
+    stderr = TRUE
+  )
+  
+  # folder lines look like: "                           PRE <name>/"
+  dirs <- sub(".*PRE\\s+", "", lines[grepl("\\sPRE\\s", lines)])
+  dirs <- sub("/$", "", dirs)
+  
+  # match: "{city}__urban_extent__{dataset_stub}__Start..._End....tif"
+  # dates can vary; allow anything between dataset stub and ".tif"
+  pat <- paste0("^", stringr::fixed(city), "__urban_extent__", stringr::fixed(dataset_stub), ".*\\.tif$")
+  matches <- dirs[grepl(pat, dirs)]
+  
+  if (length(matches) == 0) {
+    stop("No matching folder found under ", s3_parent, " for city=", city, " stub=", dataset_stub, call. = FALSE)
+  }
+  
+  # Prefer most recent by parsing StartDate/EndDate if present; otherwise take last lexicographically
+  # (Lexicographic works well if dates are YYYY-MM-DD)
+  matches <- sort(matches)
+  
+  # if multiple, take the last (usually latest date range)
+  matches[length(matches)]
+}
+
+
 # Terra options
 pick_terra_tempdir <- function(
     candidates = c("/mnt/terra", "/mnt/tmp/terra", "~/terra_tmp", file.path(tempdir(), "terra"))
@@ -182,7 +242,7 @@ run_city_opportunity <- function(
     city,
     cif_bucket = "wri-cities-indicators",
     cif_prefix = "data/published/layers",
-    out_dir = here("opportunity-metrics", "data", "rasters"),
+    write_keys = c("trees__all-trees", "cool-roofs__all-roofs"),
     # Inputs: CIF layer names/patterns
     urban_extent_path = NULL,  # if NULL, uses standard CIF path for 2020 extents
     worldpop_path     = NULL,
@@ -222,15 +282,27 @@ run_city_opportunity <- function(
       "{city}__urban_extent__OpenUrban.tif/{lulc_tiles}"
     )
   }
-  ########## TODO: change to StartYear_None_EndYear_None.tif
+
   if (is.null(albedo_path)) {
-    albedo_tiles <- list_tiles(glue(
-      "s3://wri-cities-indicators/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median/tif/",
-      "{city}__urban_extent__AlbedoCloudMasked__ZonalStats_median__StartDate_2024-12-01_EndDate_2025-02-28.tif/"))
-    albedo_paths <- glue("{cif_aws_http}/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median/tif/",
-                         "{city}__urban_extent__AlbedoCloudMasked__ZonalStats_median",
-                         "__StartDate_2024-12-01_EndDate_2025-02-28.tif/{albedo_tiles}")
+    
+    s3_parent <- glue("s3://wri-cities-indicators/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median/tif/")
+    
+    folder_name <- find_city_dataset_folder(
+      s3_parent = s3_parent,
+      city = city,
+      dataset_stub = "AlbedoCloudMasked__ZonalStats_median",
+      profile = "cities-data-dev"   # or whatever you use
+    )
+    
+    # Now list tiles inside the discovered folder
+    albedo_tiles <- list_tiles(glue("{s3_parent}{folder_name}/"), profile = "cities-data-dev")
+    
+    albedo_paths <- glue(
+      "{cif_aws_http}/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median/tif/",
+      "{folder_name}/{albedo_tiles}"
+    )
   }
+  
   if (is.null(treeheight_path)) {
     tree_tiles <- list_tiles(glue("s3://wri-cities-indicators/{cif_prefix}/TreeCanopyHeight/tif/",
                                   "{city}__urban_extent__TreeCanopyHeight__Height_3.tif/"))
@@ -393,21 +465,36 @@ run_city_opportunity <- function(
   cool_roof_opportunity <- rasterize(wp_cells, wp, "delta_alb")
   names(cool_roof_opportunity) <- "cool_roof_opportunity"
   
+  # Categorized
+  tree_opportunity_cat <- normalize_percentile(tree_opportunity) %>% 
+    cat5_from_01()
+  
+  cool_roof_opportunity_cat <- normalize_percentile(cool_roof_opportunity) %>% 
+    cat5_from_01()
+  
   # Hard guarantee: exact match to wp grid
   stopifnot(compareGeom(tree_opportunity, wp, stopOnError = FALSE))
   stopifnot(compareGeom(cool_roof_opportunity, wp, stopOnError = FALSE))
   
   # -------- Write outputs --------
-  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
-  
   write_s3(
     tree_opportunity,
-    glue("{bucket}/OpenUrban/{city}/opportunity-layers/opportunity__trees__all-plantable.tif")
+    glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity__trees__all-plantable.tif")
   )
   
   write_s3(
     cool_roof_opportunity,
-    glue("{bucket}/OpenUrban/{city}/opportunity-layers/opportunity__cool-roofs__all-roofs.tif")
+    glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity__cool-roofs__all-roofs.tif")
+  )
+  
+  write_s3(
+    tree_opportunity_cat,
+    glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity-CAT__trees__all-plantable__.tif")
+  )
+  
+  write_s3(
+    cool_roof_opportunity_cat,
+    glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity-CAT__cool-roofs__all-roofs.tif")
   )
   
   invisible(list(
@@ -418,8 +505,4 @@ run_city_opportunity <- function(
   ))
 }
 
-# -------------------------
-# Example
-# -------------------------
-# res <- run_city_opportunity("BRA-Campinas")
-# res_us <- run_city_opportunity("USA-Phoenix")
+

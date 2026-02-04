@@ -10,9 +10,9 @@ library(glue)
 library(geoarrow)
 library(sfarrow)
 library(processx)
-library(future)
-library(future.apply)
-library(parallel)
+# library(future)
+# library(future.apply)
+# library(parallel)
 
 
 
@@ -470,7 +470,7 @@ generate_openurban_city <- function(city) {
 # RUN
 # ============================================================
 
-generate_openurban_city("NLD-Rotterdam")
+# generate_openurban_city("NLD-Rotterdam")
 
 
 
