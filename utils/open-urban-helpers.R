@@ -12,7 +12,8 @@ run_python_live <- function(args,
     args = args,
     stdout = NULL,
     stderr = NULL,
-    pty = TRUE
+    pty = TRUE,
+    wd = wd
   )
   
   safe_read <- function() {

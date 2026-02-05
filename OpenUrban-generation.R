@@ -384,7 +384,7 @@ create_lulc_tile <- function(
       "python", "-u", script_path, gee_args
     )
     
-    run_python_live(args)
+    run_python_live(args, wd = here())
   }
   
   invisible(list(
@@ -412,7 +412,7 @@ generate_openurban_city <- function(city) {
     "-n","open-urban",
     "python","-u","get_data.py", city
   )
-  run_python_live(args)
+  run_python_live(args, wd = here())
   
   grid <- st_read(glue("https://wri-cities-tcm.s3.us-east-1.amazonaws.com/OpenUrban/{city}/city_grid/city_grid.geojson"),
                   quiet = TRUE)
@@ -460,7 +460,7 @@ generate_openurban_city <- function(city) {
   #   )
   #   
   #   args <- c("run","--no-capture-output","-n", env_name, "python","-u", script_path, gee_args)
-  #   run_python_live(args)
+  #   run_python_live(args, here())
   # }
   
   
