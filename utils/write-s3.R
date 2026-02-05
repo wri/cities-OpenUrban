@@ -1,3 +1,5 @@
+s3 <- paws::s3()
+
 write_s3 <- function(obj, file_path) {
   s3_uri <- if (grepl("^s3://", file_path)) file_path else glue::glue("s3://{file_path}")
   
