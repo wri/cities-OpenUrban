@@ -331,6 +331,7 @@ run_city_opportunity <- function(
     vect()
   
   # -------- WorldPop grid --------
+  print("Processing worldpop ...")
   # Create a 100m WorldPop grid as polygons, give each cell a stable gid
   wp <- rast(worldpop_path)
   wp[is.na(wp)] <- 1
@@ -374,6 +375,7 @@ run_city_opportunity <- function(
       pull(tile_name)
     
     # Load data
+    print("Loading rasters...")
     lulc    <- load_and_merge(str_subset(lulc_paths, str_c(tiles_touching, collapse = "|"))) |> 
       st_crop(bb)
     alb     <- load_and_merge(str_subset(albedo_paths, str_c(tiles_touching, collapse = "|"))) |> 
@@ -399,6 +401,7 @@ run_city_opportunity <- function(
     tree <- tree %>% mask(gid_on_lulc)
     
     # Zonal stats
+    print("Calculating zonal stats...")
     # -------- Work on LULC grid (analysis grid) --------
     # Pixel area on the LULC grid (m^2)
     area <- cellSize(lulc, unit = "m")
