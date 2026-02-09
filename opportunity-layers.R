@@ -286,7 +286,7 @@ run_city_opportunity <- function(
       "{city}__urban_extent__OpenUrban.tif/fishnet_grid.json"
     ))
     
-    if (length(lulc_tiles != nrow(lulc_grid))) {
+    if (length(lulc_tiles) != nrow(lulc_grid)) {
       stop(glue("Missing OpenUrban tiles in ", 
                 "s3://wri-cities-indicators/{cif_prefix}/OpenUrban/tif/",
                  "{city}__urban_extent__OpenUrban.tif/"))
@@ -312,7 +312,7 @@ run_city_opportunity <- function(
       "{folder_name}/{albedo_tiles}"
     )
     
-    if (length(albedo_tiles != nrow(lulc_grid))) {
+    if (length(albedo_tiles) != nrow(lulc_grid)) {
       stop(glue("Missing albedo tiles in ", 
                 "s3://wri-cities-indicators/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median",
                 "/tif/{folder_name}"))
@@ -332,7 +332,7 @@ run_city_opportunity <- function(
       "{city}__urban_extent__TreeCanopyHeight__Height_3.tif/{tree_tiles}"
     )
     
-    if (length(tree_tiles != nrow(lulc_grid))) {
+    if (length(tree_tiles) != nrow(lulc_grid)) {
       stop(glue("Missing tree canopy tiles in ", 
                 "s3://wri-cities-indicators/{cif_prefix}/TreeCanopyHeight/tif/",
                 "{city}__urban_extent__TreeCanopyHeight__Height_3.tif/"))
