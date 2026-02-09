@@ -250,7 +250,6 @@ run_city_opportunity <- function(
     albedo_path       = NULL,
     treeheight_path   = NULL,
     # Method knobs
-    tree_height_threshold_m = 3,
     cool_roof_target_low = 0.62,
     cool_roof_target_high = 0.28,
     terra_tempdir = "/tmp/terra",
@@ -281,6 +280,11 @@ run_city_opportunity <- function(
       "{cif_aws_http}/{cif_prefix}/OpenUrban/tif/",
       "{city}__urban_extent__OpenUrban.tif/{lulc_tiles}"
     )
+    
+    lulc_grid <- st_read(glue(
+      "{cif_aws_http}/{cif_prefix}/OpenUrban/tif/",
+      "{city}__urban_extent__OpenUrban.tif/fishnet_grid.json"
+    ))
   }
 
   if (is.null(albedo_path)) {
@@ -301,6 +305,11 @@ run_city_opportunity <- function(
       "{cif_aws_http}/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median/tif/",
       "{folder_name}/{albedo_tiles}"
     )
+    
+    # albedo_grid <- st_read(glue(
+    #   "{cif_aws_http}/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median/tif/",
+    #   "{folder_name}/fishnet_grid.json"
+    # ))
   }
   
   if (is.null(treeheight_path)) {
@@ -310,21 +319,16 @@ run_city_opportunity <- function(
       "{cif_aws_http}/{cif_prefix}/TreeCanopyHeight/tif/",
       "{city}__urban_extent__TreeCanopyHeight__Height_3.tif/{tree_tiles}"
     )
+    
+    # tree_grid <- st_read(glue(
+    #   "{cif_aws_http}/{cif_prefix}/TreeCanopyHeight/tif/",
+    #   "{city}__urban_extent__TreeCanopyHeight__Height_3.tif/fishnet_grid.json"
+    # ))
   }
   
   # -------- Load data --------
   urban_extent <- st_read(urban_extent_path, quiet = TRUE) %>% 
     vect()
-  
-  lulc    <- load_and_merge(lulc_paths)       
-  alb     <- load_and_merge(albedo_paths)     
-  tree_h  <- load_and_merge(treeheight_paths) 
-  
-  # Resample albedo to match LULC & tree_h
-  alb <- resample(alb, lulc, method = "bilinear")
-  
-  # Binary tree cover
-  tree <- as.numeric(!is.na(tree_h))
   
   # -------- WorldPop grid --------
   # Create a 100m WorldPop grid as polygons, give each cell a stable gid
@@ -334,86 +338,147 @@ run_city_opportunity <- function(
   wp_cells <- as.polygons(wp, values = FALSE, na.rm = TRUE, aggregate = FALSE) 
   wp_cells$gid <- seq_len(nrow(wp_cells))
   
-  # Reproject the *vector* grid into the LULC CRS 
-  wp_cells_lulc <- project(wp_cells, crs(lulc))
+  wp_cells <- st_as_sf(wp_cells)
   
-  # Rasterize gid onto the LULC grid (zone id only)
-  gid_on_lulc <- rasterize(wp_cells_lulc, lulc, field = "gid", touches = FALSE)
-  names(gid_on_lulc) <- "gid"
+  # Batch the zonal statistics to avoid loading the entire raster
+  tile_grid <- wp_cells %>%
+    st_join(lulc_grid %>% select(tile_name), join = st_intersects, left = TRUE) %>% 
+    st_drop_geometry()
   
-  lulc <- lulc %>% mask(gid_on_lulc)
-  alb <- alb %>% mask(gid_on_lulc)
-  tree <- tree %>% mask(gid_on_lulc)
+  wp_cells <- wp_cells %>% 
+    full_join(tile_grid)
   
-  # -------- Work on LULC grid (analysis grid) --------
-  # Pixel area on the LULC grid (m^2)
-  area <- cellSize(lulc, unit = "m")
-  names(area) <- "area_m2"
-  
-  # Mask water (LULC 300)
-  lulc_int <- as.int(lulc)
-  lulc_int <- mask(lulc_int, lulc_int, maskvalues = 300)
-  
-  # Create road right-of-way
-  # Binary mask for roads
-  roads <- lulc_int == 500
-  
-  # Square kernel with radius = 5 pixels
-  k <- matrix(1, nrow = 11, ncol = 11)
-  roads_dilated <- focal(roads, w = k, fun = "max", na.rm = TRUE)
-  ped_area <- ifel(roads_dilated == 1 & roads == 0, 1, 0)
-  
-  lulc_int[ped_area == 1 & lulc_int != 500] <- 700L
-  
-  # Updated albedo (US vs non-US rule)
-  updatedAlb <- make_updated_albedo(
-    city = city,
-    lulc_int = lulc_int,
-    alb = alb,
-    target_low  = cool_roof_target_low,
-    target_high = cool_roof_target_high
-  )
-  
-  # -------- Zone id = gid*K + lulc --------
-  K <- 1000L
-  zone <- gid_on_lulc * K + lulc_int
-  names(zone) <- "zone"
-  
-  # -------- Zonal stats by (gid,lulc) --------
-  x <- c(tree, alb, updatedAlb, area)
-  names(x) <- c("tree", "albedo", "updatedAlb", "area_m2")
-  
-  m <- zonal(x[[1:3]], zone, fun = "mean", na.rm = TRUE)
-  a <- zonal(x[["area_m2"]], zone, fun = "sum",  na.rm = TRUE)
-  
-  stats_long <- as.data.frame(m) |>
-    rename(tree_pct = tree) |>
-    left_join(as.data.frame(a), by = "zone") |>
-    mutate(
-      gid  = zone %/% K,
-      lulc_code = zone %% K,
-      area_km2 = area_m2 / 1e6,
-      plantable = lulc_code %in% PLANTABLE_CODES
-    ) |>
-    select(gid, lulc_code, plantable, tree_pct, albedo, updatedAlb, area_m2, area_km2)
-  
-  # Label LULC for the percentile logic (only needs the plantable classes)
-  # (We only label what we use; everything else can remain NA for lulc_label)
-  stats_long <- stats_long |>
-    mutate(
-      lulc_label = case_when(
-        lulc_code == 110L ~ "Green space (other)",
-        lulc_code == 120L ~ "Built up (other)",
-        lulc_code == 130L ~ "Barren",
-        lulc_code == 200L ~ "Public open space",
-        lulc_code == 400L ~ "Parking",
-        lulc_code == 700L ~ "Pedestrian right-of-way",
-        TRUE              ~ NA_character_
-      )
+  # Divide wp_cells into batches
+  process_batch <- function(id) {
+    
+    on.exit({
+      try(terra::tmpFiles(remove = TRUE), silent = TRUE)
+      gc()
+    }, add = TRUE)
+    
+    print(glue("Processing batch for {id}"))
+    
+    wp_cells_batch <- wp_cells %>% 
+      filter(tile_name == id)
+    
+    bb <- st_as_sf(st_as_sfc(st_bbox(wp_cells_batch)))
+    
+    tile <- lulc_grid |> 
+      filter(tile_name == id)
+    
+    idx_touch <- st_touches(lulc_grid, tile, sparse = FALSE)[, 1]
+    
+    tiles_touching <- lulc_grid %>%
+      filter(tile_name == id | idx_touch) |> 
+      st_filter(bb) |> 
+      pull(tile_name)
+    
+    # Load data
+    lulc    <- load_and_merge(str_subset(lulc_paths, str_c(tiles_touching, collapse = "|"))) |> 
+      st_crop(bb)
+    alb     <- load_and_merge(str_subset(albedo_paths, str_c(tiles_touching, collapse = "|"))) |> 
+      st_crop(bb)    
+    tree_h  <- load_and_merge(str_subset(treeheight_paths, str_c(tiles_touching, collapse = "|"))) |> 
+      st_crop(bb)
+    
+    # Resample albedo to match LULC & tree_h
+    alb <- resample(alb, lulc, method = "bilinear")
+    
+    # Binary tree cover
+    tree <- as.numeric(!is.na(tree_h))
+    
+    # Reproject the *vector* grid into the LULC CRS 
+    wp_cells_lulc_batch <- st_transform(wp_cells_batch, st_crs(lulc))
+    
+    # Rasterize gid onto the LULC grid (zone id only)
+    gid_on_lulc <- rasterize(wp_cells_lulc_batch, lulc, field = "gid", touches = FALSE)
+    names(gid_on_lulc) <- "gid"
+    
+    lulc <- lulc %>% mask(gid_on_lulc)
+    alb <- alb %>% mask(gid_on_lulc)
+    tree <- tree %>% mask(gid_on_lulc)
+    
+    # Zonal stats
+    # -------- Work on LULC grid (analysis grid) --------
+    # Pixel area on the LULC grid (m^2)
+    area <- cellSize(lulc, unit = "m")
+    names(area) <- "area_m2"
+    
+    # Mask water (LULC 300)
+    lulc_int <- as.int(lulc)
+    lulc_int <- mask(lulc_int, lulc_int, maskvalues = 300)
+    
+    # Create road right-of-way
+    # Binary mask for roads
+    roads <- lulc_int == 500
+    
+    # Square kernel with radius = 5 pixels
+    k <- matrix(1, nrow = 11, ncol = 11)
+    roads_dilated <- focal(roads, w = k, fun = "max", na.rm = TRUE)
+    ped_area <- ifel(roads_dilated == 1 & roads == 0, 1, 0)
+    
+    lulc_int[ped_area == 1 & lulc_int != 500] <- 700L
+    
+    # Updated albedo (US vs non-US rule)
+    updatedAlb <- make_updated_albedo(
+      city = city,
+      lulc_int = lulc_int,
+      alb = alb,
+      target_low  = cool_roof_target_low,
+      target_high = cool_roof_target_high
     )
+    
+    # -------- Zone id = gid*K + lulc --------
+    K <- 1000L
+    zone <- gid_on_lulc * K + lulc_int
+    names(zone) <- "zone"
+    
+    # -------- Zonal stats by (gid,lulc) --------
+    x <- c(tree, alb, updatedAlb, area)
+    names(x) <- c("tree", "albedo", "updatedAlb", "area_m2")
+    
+    m <- zonal(x[[1:3]], zone, fun = "mean", na.rm = TRUE)
+    a <- zonal(x[["area_m2"]], zone, fun = "sum",  na.rm = TRUE)
+    
+    stats_long <- as.data.frame(m) |>
+      rename(tree_pct = tree) |>
+      left_join(as.data.frame(a), by = "zone") |>
+      mutate(
+        gid  = zone %/% K,
+        lulc_code = zone %% K,
+        area_km2 = area_m2 / 1e6,
+        plantable = lulc_code %in% PLANTABLE_CODES
+      ) |>
+      select(gid, lulc_code, plantable, tree_pct, albedo, updatedAlb, area_m2, area_km2)
+    
+    # Label LULC for the percentile logic (only needs the plantable classes)
+    # (We only label what we use; everything else can remain NA for lulc_label)
+    stats_long <- stats_long |>
+      mutate(
+        lulc_label = case_when(
+          lulc_code == 110L ~ "Green space (other)",
+          lulc_code == 120L ~ "Built up (other)",
+          lulc_code == 130L ~ "Barren",
+          lulc_code == 200L ~ "Public open space",
+          lulc_code == 400L ~ "Parking",
+          lulc_code == 700L ~ "Pedestrian right-of-way",
+          TRUE              ~ NA_character_
+        )
+      )
+    
+    # Join to wp_cells
+    # wp_cells_batch <- st_as_sf(wp_cells_batch) %>% 
+    #   left_join(stats_long, by = "gid")
+    
+    return(stats_long)
+  }
+  t1 <- Sys.time()
+  full_stats <- map_df(unique(tile_grid$tile_name), process_batch)
+  t2 <- Sys.time()
   
   # -------- Percentile targets by plantable lulc_label --------
-  percentiles <- stats_long |>
+  percentiles <- full_stats |> 
+    st_drop_geometry() |> 
     filter(plantable, tree_pct > 0, !is.na(lulc_label)) |>
     mutate(prob = lulc_prob(lulc_label)) |>
     group_by(lulc_label) |>
@@ -423,7 +488,7 @@ run_city_opportunity <- function(
     )
   
   # -------- Compute opportunity metrics & summarise to gid (WorldPop cell) --------
-  by_gid <- stats_long |>
+  full_stats <- full_stats |>
     left_join(percentiles, by = "lulc_label") |>
     mutate(target = replace_na(target, 0)) |>
     mutate(
@@ -456,14 +521,20 @@ run_city_opportunity <- function(
     )
   
   # -------- Burn back to rasters that match WorldPop EXACTLY --------
-  wp_cells <- st_as_sf(wp_cells) %>% 
-    left_join(by_gid, by = "gid")
+  wp_cells <- wp_cells |> 
+    left_join(full_stats, by = "gid")
   
   tree_opportunity <- rasterize(wp_cells, wp, "delta_tree_pct")
   names(tree_opportunity) <- "tree_opportunity"
   
+  tree_baseline <- rasterize(wp_cells, wp, "tree_pct_existing")
+  names(tree_baseline) <- "tree_baseline"
+  
   cool_roof_opportunity <- rasterize(wp_cells, wp, "delta_alb")
   names(cool_roof_opportunity) <- "cool_roof_opportunity"
+  
+  cool_roof_baseline <- rasterize(wp_cells, wp, "alb_existing")
+  names(cool_roof_baseline) <- "cool_roof_baseline"
   
   # Categorized
   tree_opportunity_cat <- normalize_percentile(tree_opportunity) %>% 
@@ -483,8 +554,18 @@ run_city_opportunity <- function(
   )
   
   write_s3(
+    tree_baseline,
+    glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/baseline__trees__all-plantable.tif")
+  )
+  
+  write_s3(
     cool_roof_opportunity,
     glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity__cool-roofs__all-roofs.tif")
+  )
+  
+  write_s3(
+    cool_roof_baseline,
+    glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/baseline__cool-roofs__all-roofs.tif")
   )
   
   write_s3(
