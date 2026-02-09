@@ -108,7 +108,7 @@ cat5_from_01 <- function(x) {
 # Function to load and merge rasters from a list of paths
 load_and_merge <- function(paths) {
   if (length(paths) == 0) {
-    stop("No raster paths provided in plantable_paths")
+    stop("No raster paths provided")
   }
   
   rasters <- lapply(paths, rast_retry)
@@ -285,6 +285,12 @@ run_city_opportunity <- function(
       "{cif_aws_http}/{cif_prefix}/OpenUrban/tif/",
       "{city}__urban_extent__OpenUrban.tif/fishnet_grid.json"
     ))
+    
+    if (length(lulc_tiles != nrow(lulc_grid))) {
+      stop(glue("Missing OpenUrban tiles in ", 
+                "s3://wri-cities-indicators/{cif_prefix}/OpenUrban/tif/",
+                 "{city}__urban_extent__OpenUrban.tif/"))
+    }
   }
 
   if (is.null(albedo_path)) {
@@ -295,7 +301,7 @@ run_city_opportunity <- function(
       s3_parent = s3_parent,
       city = city,
       dataset_stub = "AlbedoCloudMasked__ZonalStats_median",
-      profile = "cities-data-dev"   # or whatever you use
+      profile = "cities-data-dev"   
     )
     
     # Now list tiles inside the discovered folder
@@ -305,6 +311,12 @@ run_city_opportunity <- function(
       "{cif_aws_http}/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median/tif/",
       "{folder_name}/{albedo_tiles}"
     )
+    
+    if (length(albedo_tiles != nrow(lulc_grid))) {
+      stop(glue("Missing albedo tiles in ", 
+                "s3://wri-cities-indicators/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median",
+                "/tif/{folder_name}"))
+    }
     
     # albedo_grid <- st_read(glue(
     #   "{cif_aws_http}/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median/tif/",
@@ -319,6 +331,12 @@ run_city_opportunity <- function(
       "{cif_aws_http}/{cif_prefix}/TreeCanopyHeight/tif/",
       "{city}__urban_extent__TreeCanopyHeight__Height_3.tif/{tree_tiles}"
     )
+    
+    if (length(tree_tiles != nrow(lulc_grid))) {
+      stop(glue("Missing tree canopy tiles in ", 
+                "s3://wri-cities-indicators/{cif_prefix}/TreeCanopyHeight/tif/",
+                "{city}__urban_extent__TreeCanopyHeight__Height_3.tif/"))
+    }
     
     # tree_grid <- st_read(glue(
     #   "{cif_aws_http}/{cif_prefix}/TreeCanopyHeight/tif/",
@@ -377,11 +395,11 @@ run_city_opportunity <- function(
     # Load data
     print("Loading rasters...")
     lulc    <- load_and_merge(str_subset(lulc_paths, str_c(tiles_touching, collapse = "|"))) |> 
-      st_crop(bb)
+      crop(bb)
     alb     <- load_and_merge(str_subset(albedo_paths, str_c(tiles_touching, collapse = "|"))) |> 
-      st_crop(bb)    
+      crop(bb)    
     tree_h  <- load_and_merge(str_subset(treeheight_paths, str_c(tiles_touching, collapse = "|"))) |> 
-      st_crop(bb)
+      crop(bb)
     
     # Resample albedo to match LULC & tree_h
     alb <- resample(alb, lulc, method = "bilinear")
