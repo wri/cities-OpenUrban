@@ -10,7 +10,7 @@ def to_s3(file_path, data_path):
     session = boto3.Session()
     s3 = session.client("s3")
     
-    bucket="wri-cities-heat"
+    bucket="wri-cities-tcm"
     s3_base_prefix="OpenUrban"
 
     # Remove data_path from the beginning of the file path

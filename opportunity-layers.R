@@ -600,7 +600,7 @@ run_city_opportunity <- function(
   )
   
   invisible(list(
-    stats_long = stats_long,      
+    full_stats = full_stats,      
     by_gid = by_gid,              
     tree_opportunity = tree_opportunity,
     cool_roof_opportunity = cool_roof_opportunity

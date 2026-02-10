@@ -21,6 +21,7 @@ library(processx)
 # ============================================================
 
 Sys.setenv(PYTHONUNBUFFERED = "1")
+py <- "/home/ubuntu/.conda/envs/open-urban/bin/python"
 
 s3 <- paws::s3()
 bucket <- "wri-cities-tcm"
@@ -37,7 +38,8 @@ create_lulc_tile <- function(
     gridcell_id,
     city,
     city_path,
-    upload_gee = FALSE,          # build phase defaults to FALSE (serial EE upload happens later)
+    grid,
+    upload_gee = TRUE,          # build phase defaults to FALSE (serial EE upload happens later)
     env_name = "open-urban"
 ) {
   
@@ -322,30 +324,34 @@ create_lulc_tile <- function(
   }
   
   # Combine rasters ####
-  open_space_rast <- tryCatch(rast(file.path(tmp_dir, "open_space_1m.tif")), error = function(e) NULL)
-  roads_rast      <- tryCatch(rast(file.path(tmp_dir, "roads_1m.tif")),      error = function(e) NULL)
-  water_rast      <- tryCatch(rast(file.path(tmp_dir, "water_1m.tif")),      error = function(e) NULL)
-  buildings_rast  <- tryCatch(rast(file.path(tmp_dir, "buildings_1m.tif")),  error = function(e) NULL)
-  parking_rast    <- tryCatch(rast(file.path(tmp_dir, "parking_1m.tif")),    error = function(e) NULL)
-  
-  LULC <- max(
-    esa_rast,
-    open_space_rast,
-    roads_rast,
-    water_rast,
-    buildings_rast,
-    parking_rast,
-    na.rm = TRUE
+  paths <- c(
+    open_space  = file.path(tmp_dir, "open_space_1m.tif"),
+    roads       = file.path(tmp_dir, "roads_1m.tif"),
+    water       = file.path(tmp_dir, "water_1m.tif"),
+    buildings   = file.path(tmp_dir, "buildings_1m.tif"),
+    parking     = file.path(tmp_dir, "parking_1m.tif")
   )
   
-  # Clip to gridcell
-  gridcell <- grid %>% 
-    filter(ID == gridcell_id) %>% 
-    st_transform(st_crs(LULC)) %>% 
-    st_buffer(1)
+  rasts <- lapply(paths, function(p) {
+    if (!file.exists(p)) return(NULL)
+    tryCatch(terra::rast(p), error = function(e) NULL)
+  })
   
-  LULC <- LULC %>%
-    crop(gridcell)
+  # keep only non-NULL
+  rasts <- Filter(Negate(is.null), rasts)
+  
+  raster_stack <- c(esa_rast, rast(rasts))   
+  LULC <- app(raster_stack, fun = max, na.rm = TRUE)
+  
+  
+  # Clip to gridcell
+  # gridcell <- grid %>% 
+  #   filter(ID == gridcell_id) %>% 
+  #   st_transform(st_crs(LULC)) %>% 
+  #   st_buffer(1)
+  # 
+  # LULC <- LULC %>%
+  #   crop(gridcell)
   
   # Save per-tile local file (same name within per-tile tmp_dir is fine)
   local_file <- file.path(tmp_dir, "LULC.tif")
@@ -381,7 +387,7 @@ create_lulc_tile <- function(
     args <- c(
       "run", "--no-capture-output",
       "-n", env_name,
-      "python", "-u", script_path, gee_args
+      py, "-u", script_path, gee_args
     )
     
     run_python_live(args, wd = here())
@@ -410,7 +416,7 @@ generate_openurban_city <- function(city) {
   args <- c(
     "run","--no-capture-output",
     "-n","open-urban",
-    "python","-u","get_data.py", city
+    py,"-u","get_data.py", city
   )
   run_python_live(args, wd = here())
   
@@ -420,7 +426,7 @@ generate_openurban_city <- function(city) {
   if (str_detect(city, "USA")) {
     version <- "USA"} else {version <- "global"}
   
-  map(grid$ID, create_lulc_tile, city = city, city_path = city_path, upload_gee = TRUE)
+  map(grid$ID, create_lulc_tile, city = city, city_path = city_path, grid = grid, upload_gee = TRUE)
   
   # Check that all files are in s3
   

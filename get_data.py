@@ -197,23 +197,17 @@ def get_data(city, output_base=".", batch_size=5):
     from dask.distributed import wait
     
     # ---- ESA tasks: parallel, but keep memory under control
-    ESA_CONCURRENCY = 4          # try 2 first; then 3 or 4 if stable
-    ESA_RESTART_EVERY = 12        # restart workers after every 4 completed tiles
-    ESA_MEMORY_LIMIT = "8GB"    # per worker
+    ESA_CONCURRENCY   = 2   # start 2, then 4
+    ESA_RESTART_EVERY = 0   # with threads, usually no restart needed
     
     esa_cluster = LocalCluster(
-        n_workers=ESA_CONCURRENCY,
-        threads_per_worker=1,
-        processes=True,
-        memory_limit=ESA_MEMORY_LIMIT,
+        n_workers=1,
+        threads_per_worker=ESA_CONCURRENCY,
+        processes=False,
         dashboard_address=":0",
         local_directory=f"/tmp/dask-esa-spill-{os.getuid()}",
     )
-    
     esa_client = Client(esa_cluster)
-    
-    print(f"ESA Dask: {esa_client}")
-    print(f"ESA dashboard: {esa_client.dashboard_link}")
     
     try:
         esa_total = len(per_cell)
@@ -226,29 +220,25 @@ def get_data(city, output_base=".", batch_size=5):
     
             futures = [
                 esa_client.submit(
-                    get_esa, city, bbox_fetch, grid_cell_id=gid, data_path=data_path, copy_to_s3=False
+                    get_esa, city, bbox_fetch,
+                    grid_cell_id=gid, data_path=data_path, copy_to_s3=False
                 )
                 for gid, bbox_fetch in chunk
             ]
     
             wait(futures)
-            # raise immediately if any failed
             for f in futures:
-                f.result()
+                f.result()  # raise if failed
     
-            completed += len(futures)
+            completed += len(chunk)  # <-- FIX: do this before deleting futures
     
-            # cleanup inside worker processes
-            esa_client.run(gc.collect)
+            esa_client.cancel(futures)
+            del futures
+            gc.collect()
             esa_client.run(_malloc_trim)
     
-            # periodic hard reset to stop unmanaged memory creep
-            if ESA_RESTART_EVERY and (completed % ESA_RESTART_EVERY == 0):
-                print(f"🔄 Restarting ESA workers after {completed} tiles...")
-                esa_client.restart(timeout="300s")
-    
         print("ESA tasks complete.")
-        
+    
     finally:
         esa_client.close()
         esa_cluster.close()

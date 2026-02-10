@@ -5,7 +5,8 @@ library(processx)
 # ============================================================
 
 run_python_live <- function(args,
-                            conda = "/home/ubuntu/miniconda3/condabin/conda") {
+                            conda = "/home/ubuntu/miniconda3/condabin/conda",
+                            wd) {
   
   p <- processx::process$new(
     conda,
