@@ -295,12 +295,12 @@ run_city_opportunity <- function(
 
   if (is.null(albedo_path)) {
     
-    s3_parent <- glue("s3://wri-cities-indicators/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median/tif/")
+    s3_parent <- glue("s3://wri-cities-indicators/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median__NumSeasons_3/tif/")
     
     folder_name <- find_city_dataset_folder(
       s3_parent = s3_parent,
       city = city,
-      dataset_stub = "AlbedoCloudMasked__ZonalStats_median",
+      dataset_stub = "AlbedoCloudMasked__ZonalStats_median__NumSeasons_3",
       profile = "cities-data-dev"   
     )
     
@@ -539,6 +539,12 @@ run_city_opportunity <- function(
       tree_pct_achievable        = tree_area_acres_achievable / total_area_acres,
       delta_tree_pct             = tree_pct_achievable - tree_pct_existing,
       delta_alb                  = alb_achievable - alb_existing
+    ) %>% 
+    mutate(
+      delta_tree_pct = delta_tree_pct * 100,
+      tree_pct_existing = tree_pct_existing * 100,
+      delta_alb = delta_alb * 100,
+      alb_existing = alb_existing * 100
     )
   
   # -------- Burn back to rasters that match WorldPop EXACTLY --------
