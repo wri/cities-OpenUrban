@@ -8,11 +8,16 @@ suppressPackageStartupMessages({
 })
 
 # ---- source workflows ----
-source(here("OpenUrban-generation.R"))
-source(here("opportunity-layers.R"))
+source(here("2--OpenUrban-generation.R"))
+source(here("3--opportunity-layers.R"))
 
 # ---- allowed opportunity keys ----
-OPP_KEYS <- c("trees__all-trees", "cool-roofs__all-roofs")
+OPP_KEYS <- c("baseline__trees",
+              "baseline__cool-roofs",
+              "trees__all-plantable", 
+              "trees__all-pedestrian",
+              "cool-roofs__all-roofs",
+              "all")
 
 parse_opportunity_keys <- function(x) {
   if (is.null(x) || is.na(x) || !nzchar(x)) return(character(0))
