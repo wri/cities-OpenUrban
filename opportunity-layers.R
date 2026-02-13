@@ -165,7 +165,7 @@ rast_retry <- function(path, attempts = 6, base_sleep = 0.5, quiet = FALSE) {
 # Find albedo folder
 find_city_dataset_folder <- function(s3_parent, city, dataset_stub, profile = "cities-data-dev") {
   # s3_parent example:
-  # "s3://wri-cities-indicators/data/published/layers/AlbedoCloudMasked__ZonalStats_median/tif/"
+  # "s3://wri-cities-indicators/data/published/layers/AlbedoCloudMasked__ZonalStats_median__NumSeasons_3/tif/"
   s3_parent <- sub("/?$", "/", s3_parent)
   
   # list "folders" under parent
@@ -266,6 +266,9 @@ run_city_opportunity <- function(
       "{cif_aws_http}/{cif_prefix}/UrbanExtents/geojson/",
       "{city}__urban_extent__UrbanExtents__StartYear_2020_EndYear_2020.geojson"
     )
+    
+    urban_extent <- st_read(urban_extent_path, quiet = TRUE) %>% 
+      vect()
   }
   if (is.null(worldpop_path)) {
     worldpop_path <- glue(
@@ -274,17 +277,20 @@ run_city_opportunity <- function(
     )
   }
   if (is.null(lulc_path)) {
+    lulc_grid <- st_read(glue(
+      "{cif_aws_http}/{cif_prefix}/OpenUrban/tif/",
+      "{city}__urban_extent__OpenUrban.tif/fishnet_grid.json"
+    )) %>% st_filter(st_as_sf(urban_extent))
+    
     lulc_tiles <- list_tiles(glue("s3://wri-cities-indicators/{cif_prefix}/OpenUrban/tif/",
                                   "{city}__urban_extent__OpenUrban.tif/"))
+    
+    lulc_tiles <- lulc_tiles[which(str_remove(lulc_tiles, ".tif") %in% lulc_grid$tile_name)]
+
     lulc_paths <- glue(
       "{cif_aws_http}/{cif_prefix}/OpenUrban/tif/",
       "{city}__urban_extent__OpenUrban.tif/{lulc_tiles}"
     )
-    
-    lulc_grid <- st_read(glue(
-      "{cif_aws_http}/{cif_prefix}/OpenUrban/tif/",
-      "{city}__urban_extent__OpenUrban.tif/fishnet_grid.json"
-    ))
     
     if (length(lulc_tiles) != nrow(lulc_grid)) {
       stop(glue("Missing OpenUrban tiles in ", 
@@ -306,27 +312,27 @@ run_city_opportunity <- function(
     
     # Now list tiles inside the discovered folder
     albedo_tiles <- list_tiles(glue("{s3_parent}{folder_name}/"), profile = "cities-data-dev")
+    albedo_tiles <- albedo_tiles[which(str_remove(albedo_tiles, ".tif") %in% lulc_grid$tile_name)]
     
     albedo_paths <- glue(
-      "{cif_aws_http}/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median/tif/",
+      "{cif_aws_http}/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median__NumSeasons_3/tif/",
       "{folder_name}/{albedo_tiles}"
     )
     
     if (length(albedo_tiles) != nrow(lulc_grid)) {
       stop(glue("Missing albedo tiles in ", 
-                "s3://wri-cities-indicators/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median",
+                "s3://wri-cities-indicators/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median__NumSeasons_3",
                 "/tif/{folder_name}"))
     }
-    
-    # albedo_grid <- st_read(glue(
-    #   "{cif_aws_http}/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median/tif/",
-    #   "{folder_name}/fishnet_grid.json"
-    # ))
+
   }
   
   if (is.null(treeheight_path)) {
     tree_tiles <- list_tiles(glue("s3://wri-cities-indicators/{cif_prefix}/TreeCanopyHeight/tif/",
                                   "{city}__urban_extent__TreeCanopyHeight__Height_3.tif/"))
+    
+    tree_tiles <- tree_tiles[which(str_remove(tree_tiles, ".tif") %in% lulc_grid$tile_name)]
+    
     treeheight_paths <- glue(
       "{cif_aws_http}/{cif_prefix}/TreeCanopyHeight/tif/",
       "{city}__urban_extent__TreeCanopyHeight__Height_3.tif/{tree_tiles}"
@@ -337,16 +343,10 @@ run_city_opportunity <- function(
                 "s3://wri-cities-indicators/{cif_prefix}/TreeCanopyHeight/tif/",
                 "{city}__urban_extent__TreeCanopyHeight__Height_3.tif/"))
     }
-    
-    # tree_grid <- st_read(glue(
-    #   "{cif_aws_http}/{cif_prefix}/TreeCanopyHeight/tif/",
-    #   "{city}__urban_extent__TreeCanopyHeight__Height_3.tif/fishnet_grid.json"
-    # ))
+
   }
   
   # -------- Load data --------
-  urban_extent <- st_read(urban_extent_path, quiet = TRUE) %>% 
-    vect()
   
   # -------- WorldPop grid --------
   print("Processing worldpop ...")
@@ -467,10 +467,9 @@ run_city_opportunity <- function(
       mutate(
         gid  = zone %/% K,
         lulc_code = zone %% K,
-        area_km2 = area_m2 / 1e6,
         plantable = lulc_code %in% PLANTABLE_CODES
       ) |>
-      select(gid, lulc_code, plantable, tree_pct, albedo, updatedAlb, area_m2, area_km2)
+      select(gid, lulc_code, plantable, tree_pct, albedo, updatedAlb, area_m2, area_m2)
     
     # Label LULC for the percentile logic (only needs the plantable classes)
     # (We only label what we use; everything else can remain NA for lulc_label)
@@ -493,9 +492,8 @@ run_city_opportunity <- function(
     
     return(stats_long)
   }
-  t1 <- Sys.time()
+
   full_stats <- map_df(unique(tile_grid$tile_name), process_batch)
-  t2 <- Sys.time()
   
   # -------- Percentile targets by plantable lulc_label --------
   percentiles <- full_stats |> 
@@ -513,38 +511,44 @@ run_city_opportunity <- function(
     left_join(percentiles, by = "lulc_label") |>
     mutate(target = replace_na(target, 0)) |>
     mutate(
-      tree_area_acres       = area_km2 * tree_pct,
-      plantable_area_acres  = (area_km2 * (1 - tree_pct)) * plantable,
-      target_area_acres     = if_else(tree_area_acres > plantable_area_acres * target,
-                                      tree_area_acres,
-                                      plantable_area_acres * target),
-      delta_tree_area_acres = target_area_acres - tree_area_acres,
+      tree_area_m2       = area_m2 * tree_pct,
+      plantable_area_m2  = (area_m2 * (1 - tree_pct)) * plantable,
+      target_area_m2     = if_else(tree_area_m2 > plantable_area_m2 * target,
+                                      tree_area_m2,
+                                      plantable_area_m2 * target),
+      delta_tree_area_m2 = target_area_m2 - tree_area_m2,
       alb_potential         = updatedAlb
     ) |>
     group_by(gid) |>
     summarise(
-      tree_area_acres       = sum(tree_area_acres, na.rm = TRUE),
-      plantable_area_acres  = sum(plantable_area_acres, na.rm = TRUE),
-      delta_tree_area_acres = sum(delta_tree_area_acres, na.rm = TRUE),
-      total_area_acres      = sum(area_km2, na.rm = TRUE),
+      street_tree_area_m2       = sum(tree_area_m2[lulc_code == 700], na.rm = TRUE),
+      plantable_street_area_m2  = sum(plantable_area_m2[lulc_code == 700], na.rm = TRUE),
+      delta_street_tree_area_m2 = sum(delta_tree_area_m2[lulc_code == 700], na.rm = TRUE),
       
-      alb_existing   = sum(albedo * area_km2, na.rm = TRUE) / total_area_acres,
-      alb_achievable = sum(alb_potential * area_km2, na.rm = TRUE) / total_area_acres,
+      tree_area_m2       = sum(tree_area_m2, na.rm = TRUE),
+      plantable_area_m2  = sum(plantable_area_m2, na.rm = TRUE),
+      delta_tree_area_m2 = sum(delta_tree_area_m2, na.rm = TRUE),
+      total_area_m2      = sum(area_m2, na.rm = TRUE),
+
+      alb_existing   = sum(albedo * area_m2, na.rm = TRUE) / total_area_m2,
+      alb_achievable = sum(alb_potential * area_m2, na.rm = TRUE) / total_area_m2,
       
       .groups = "drop"
     ) |>
     mutate(
-      tree_pct_existing          = tree_area_acres / total_area_acres,
-      tree_area_acres_achievable = tree_area_acres + delta_tree_area_acres,
-      tree_pct_achievable        = tree_area_acres_achievable / total_area_acres,
+      tree_pct_existing          = tree_area_m2 / total_area_m2,
+      tree_area_m2_achievable    = tree_area_m2 + delta_tree_area_m2,
+      tree_pct_achievable        = tree_area_m2_achievable / total_area_m2,
       delta_tree_pct             = tree_pct_achievable - tree_pct_existing,
-      delta_alb                  = alb_achievable - alb_existing
+      
+      street_tree_area_m2_achievable    = tree_area_m2 + delta_street_tree_area_m2,
+      street_tree_pct_achievable        = street_tree_area_m2_achievable / total_area_m2,
+      delta_street_tree_pct             = street_tree_pct_achievable - tree_pct_existing,
+      
+      delta_alb                  = pmax(alb_achievable - alb_existing, 0)
     ) %>% 
     mutate(
-      delta_tree_pct = delta_tree_pct * 100,
-      tree_pct_existing = tree_pct_existing * 100,
-      delta_alb = delta_alb * 100,
-      alb_existing = alb_existing * 100
+      across(c(contains("pct"), contains("alb")), ~ .x * 100)
     )
   
   # -------- Burn back to rasters that match WorldPop EXACTLY --------
@@ -553,6 +557,9 @@ run_city_opportunity <- function(
   
   tree_opportunity <- rasterize(wp_cells, wp, "delta_tree_pct")
   names(tree_opportunity) <- "tree_opportunity"
+  
+  street_tree_opportunity <- rasterize(wp_cells, wp, "delta_street_tree_pct")
+  names(tree_opportunity) <- "street_tree_opportunity"
   
   tree_baseline <- rasterize(wp_cells, wp, "tree_pct_existing")
   names(tree_baseline) <- "tree_baseline"
@@ -567,6 +574,9 @@ run_city_opportunity <- function(
   tree_opportunity_cat <- normalize_percentile(tree_opportunity) %>% 
     cat5_from_01()
   
+  street_tree_opportunity_cat <- normalize_percentile(street_tree_opportunity) %>% 
+    cat5_from_01()
+  
   cool_roof_opportunity_cat <- normalize_percentile(cool_roof_opportunity) %>% 
     cat5_from_01()
   
@@ -578,6 +588,11 @@ run_city_opportunity <- function(
   write_s3(
     tree_opportunity,
     glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity__trees__all-plantable.tif")
+  )
+  
+  write_s3(
+    street_tree_opportunity,
+    glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity__trees__pedestrian.tif")
   )
   
   write_s3(
@@ -607,7 +622,6 @@ run_city_opportunity <- function(
   
   invisible(list(
     full_stats = full_stats,      
-    by_gid = by_gid,              
     tree_opportunity = tree_opportunity,
     cool_roof_opportunity = cool_roof_opportunity
   ))
