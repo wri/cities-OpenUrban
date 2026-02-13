@@ -10,9 +10,6 @@ library(glue)
 library(geoarrow)
 library(sfarrow)
 library(processx)
-# library(future)
-# library(future.apply)
-# library(parallel)
 
 
 
