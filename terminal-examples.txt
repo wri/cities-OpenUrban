@@ -1,0 +1,12 @@
+OpenUrban only for two cities:
+
+Rscript OpenUrban-workflow.R --city USA-Phoenix,NLD-Rotterdam --openurban
+
+Tree opportunity only for two cities:
+
+Rscript OpenUrban-workflow.R --city BRA-Teresina,BRA-Recife --opportunity trees__all-trees
+Rscript OpenUrban-workflow.R --city ZAF-Cape_Town --opportunity trees__all-trees
+
+OpenUrban and both opportunity layers for two cities:
+
+Rscript OpenUrban-workflow.R --city USA-Phoenix,BRA-Teresina --openurban --opportunity trees__all-trees,cool-roofs__all-roofs
