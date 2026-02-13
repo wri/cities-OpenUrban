@@ -110,7 +110,12 @@ for (city in cities) {
     msg <- conditionMessage(e)
     message("!! FAILED: ", city)
     message("!! ERROR: ", msg)
-    failures[[city]] <<- msg
+    trace <- paste(utils::capture.output(traceback(2)), collapse = "\n")
+    failures[[city]] <<- list(
+      message = msg,
+      traceback = trace,
+      time = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")
+    )
     
     if (isTRUE(opt$`fail-fast`)) stop(e)
     list(ok = FALSE, error = msg)
@@ -123,19 +128,78 @@ message("\n==============================")
 message("SUMMARY")
 message("==============================")
 
-ok_cities <- names(results)[vapply(results, function(x) isTRUE(x$ok), logical(1))]
+ok_cities  <- names(results)[vapply(results, function(x) isTRUE(x$ok), logical(1))]
 bad_cities <- names(results)[!vapply(results, function(x) isTRUE(x$ok), logical(1))]
 
 message("Succeeded: ", if (length(ok_cities) == 0) "(none)" else paste(ok_cities, collapse = ", "))
-message("Failed: ", if (length(bad_cities) == 0) "(none)" else paste(bad_cities, collapse = ", "))
+message("Failed: ",    if (length(bad_cities) == 0) "(none)" else paste(bad_cities, collapse = ", "))
 
 if (length(bad_cities) > 0) {
   message("\nFailure details:")
   for (ct in bad_cities) {
-    message("- ", ct, ": ", failures[[ct]])
+    info <- failures[[ct]]
+    if (is.list(info)) {
+      message("- ", ct, ": ", info$message)
+    } else {
+      message("- ", ct, ": ", info)
+    }
   }
-  quit(status = 1)
 }
 
-message("\nAll done.")
-quit(status = 0)
+# -------------------------
+# Write per-city error logs (persistent: here("logs"))
+# -------------------------
+log_dir <- here("logs")
+dir.create(log_dir, showWarnings = FALSE, recursive = TRUE)
+ts <- format(Sys.time(), "%Y%m%d_%H%M%S")
+
+if (length(bad_cities) == 0) {
+  message("No failures; no per-city error logs written.")
+} else {
+  for (ct in bad_cities) {
+    info <- failures[[ct]]
+    
+    safe_city <- gsub("[^A-Za-z0-9._-]+", "_", ct)
+    log_path <- file.path(log_dir, paste0("ERROR_", safe_city, "_", ts, ".log"))
+    
+    con <- file(log_path, open = "wt")
+    on.exit(try(close(con), silent = TRUE), add = TRUE)
+    
+    writeLines(glue("Run timestamp: {format(Sys.time(), '%Y-%m-%d %H:%M:%S %Z')}"), con)
+    writeLines(glue("City: {ct}"), con)
+    writeLines(glue("Run OpenUrban: {opt$openurban}"), con)
+    writeLines(glue("Opportunity keys: {if (length(opp_keys)==0) '(none)' else paste(opp_keys, collapse=', ')}"), con)
+    writeLines(glue("Fail fast: {opt$`fail-fast`}"), con)
+    writeLines(strrep("-", 60), con)
+    
+    if (is.list(info)) {
+      writeLines(glue("Failure time: {info$time}"), con)
+      writeLines(glue("Error: {info$message}"), con)
+      if (!is.null(info$traceback) && nzchar(info$traceback)) {
+        writeLines("\nTraceback:", con)
+        writeLines(info$traceback, con)
+      }
+    } else {
+      writeLines(glue("Error: {info}"), con)
+    }
+    
+    close(con)
+    message("Wrote error log: ", normalizePath(log_path, winslash = "/", mustWork = FALSE))
+  }
+}
+
+# -------------------------
+# Exit status
+# -------------------------
+status <- if (length(bad_cities) > 0) 1 else 0
+
+# -------------------------
+# Always shutdown if flag present
+# -------------------------
+term_flag <- tolower(Sys.getenv("EC2_TERMINATE_ON_COMPLETE", "false"))
+if (term_flag %in% c("true", "1", "yes")) {
+  message("EC2_TERMINATE_ON_COMPLETE set; shutting down now...")
+  system("sudo -n shutdown -h now || sudo -n poweroff || true")
+}
+
+quit(status = status)
