@@ -120,10 +120,6 @@ Rscript OpenUrban-workflow.R \
   --city USA-Phoenix,BRA-Teresina \
   --openurban
 ```
-Single-line command:
-```bash
-Rscript OpenUrban-workflow.R --city USA-Phoenix,BRA-Teresina --openurban
-```
 
 Notes:
 
