@@ -30,7 +30,7 @@ dependencies:
   # Python (top-level only)
   # ------------------
   - pip:
-      - city-metrix==0.3.0
+      - "city-metrix @ git+https://github.com/wri/cities-cif"
       - earthengine-api==1.7.10
       - geemap==0.36.6
       - geopandas==1.1.2
