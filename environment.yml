@@ -8,20 +8,21 @@ dependencies:
   # ------------------
   - python=3.11
   - pip
-  - r-base=4.5.2
+  - r-base=4.5          # <-- relax patch pin to avoid ICU solver failures
   - r-renv
 
-
   # ------------------
-  # Geospatial system libs (for sf / terra / rasterio / pyproj)
+  # Geospatial system libs (sf / terra / rasterio / pyproj)
   # ------------------
   - gdal
   - geos
   - proj
+  - proj-data           # <-- helps PROJ/pyproj find proj.db consistently
   - udunits2
-  
+
+  # R geospatial
   - r-arrow
-  - r-s2 
+  - r-s2
   - r-sf
   - r-lwgeom
 
@@ -33,18 +34,22 @@ dependencies:
   - sqlite
 
   # ------------------
-  # Python (top-level only)
+  # Python deps (prefer conda for compiled geo stack)
+  # ------------------
+  - numpy<=2.3          # <-- numba/xarray-spatial compatibility
+  - pandas=2.3.*
+  - xarray=2025.12.0
+  - rioxarray=0.19.0
+  - geopandas=1.1.*
+  - rasterio=1.4.*
+  - pyproj=3.7.*
+  - shapely=2.1.*
+  - scikit-image=0.26.*
+  - geemap=0.36.6
+  - earthengine-api=1.7.10
+
+  # ------------------
+  # Python (pip only when needed)
   # ------------------
   - pip:
       - "city-metrix @ git+https://github.com/wri/cities-cif"
-      - earthengine-api==1.7.10
-      - geemap==0.36.6
-      - geopandas==1.1.2
-      - rasterio==1.4.4
-      - pyproj==3.7.2
-      - shapely==2.1.2
-      - xarray==2025.12.0
-      - rioxarray==0.19.0
-      - pandas==2.3.3
-      - numpy==2.3.5
-      - scikit-image==0.26.0
