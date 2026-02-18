@@ -18,7 +18,18 @@ library(processx)
 # ============================================================
 
 Sys.setenv(PYTHONUNBUFFERED = "1")
-py <- "/home/ubuntu/.conda/envs/open-urban/bin/python"
+
+# Allow user to set python path if necessary
+resolve_openurban_python <- function(env = "open-urban") {
+  # Optional explicit override (nice for debugging / weird setups)
+  py_override <- Sys.getenv("OPENURBAN_PYTHON", unset = "")
+  if (nzchar(py_override)) return(py_override)
+  
+  # Default: rely on conda run resolving python in the env
+  "python"
+}
+
+py <- resolve_openurban_python("open-urban")
 
 s3 <- paws::s3()
 bucket <- "wri-cities-tcm"
