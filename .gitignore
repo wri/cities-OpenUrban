@@ -175,3 +175,4 @@ renv/library/
 # old files
 /old/
 /data-old/
+tmp/

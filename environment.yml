@@ -8,6 +8,7 @@ dependencies:
   # ------------------
   - python=3.11
   - pip
+  - icu <76
   - r-base=4.5          # <-- relax patch pin to avoid ICU solver failures
   - r-renv
 
