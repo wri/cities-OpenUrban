@@ -164,7 +164,7 @@ cython_debug/
 .Rhistory
 .RData
 .Renviron
-renv/library/
+.Rprofile
 
 # Data files
 /data

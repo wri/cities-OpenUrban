@@ -3,20 +3,14 @@
 # Run after: conda activate open-urban
 
 cran_pkgs <- c(
-  "glue",
   "here",
   "optparse",
-  "stringr",
   "geoarrow",
   "sfarrow",
   "paws",
   "processx",
   "tidyverse",
-  "dplyr",
-  "fs",
-  "readr",
-  "tidyr",
-  "reticulate"
+  "fs"
 )
 
 # Base packages (utils, stats, tools) are part of R itself; do not install.
