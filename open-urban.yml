@@ -28,7 +28,6 @@ dependencies:
   - r-terra
   - r-raster
   - r-exactextractr
-  - r-sfarrow
 
 
   # ------------------

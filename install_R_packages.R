@@ -8,6 +8,7 @@ cran_pkgs <- c(
   "optparse",
   "stringr",
   "geoarrow",
+  "sfarrow",
   "paws",
   "processx",
   "tidyverse",
