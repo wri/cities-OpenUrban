@@ -116,7 +116,7 @@ All commands should be run from the root of the repository.
 Run:
 
 ```bash
-Rscript OpenUrban-workflow.R \
+Rscript 1--OpenUrban-workflow.R \
   --city USA-Phoenix,BRA-Teresina \
   --openurban
 ```
@@ -146,7 +146,7 @@ Notes:
 ### Run all opportunity layers
 
 ```bash
-Rscript OpenUrban-workflow.R \
+Rscript 1--OpenUrban-workflow.R \
   --city BRA-Rio_de_Janeiro,IND-Bhopal,MEX-Mexico_City \
   --opportunity all
 ```
@@ -156,7 +156,7 @@ Rscript OpenUrban-workflow.R \
 ### Run specific opportunity layers
 
 ```bash
-Rscript OpenUrban-workflow.R \
+Rscript 1--OpenUrban-workflow.R \
   --city USA-Atlanta \
   --opportunity trees__all-plantable,cool-roofs__all-roofs
 ```
@@ -216,7 +216,7 @@ You are now inside a persistent session.
 Run your workflow:
 
 ```bash
-Rscript OpenUrban-workflow.R \
+Rscript 1--OpenUrban-workflow.R \
   --city USA-Phoenix \
   --openurban
 ```
@@ -245,7 +245,7 @@ screen -r openurban
 `nohup` runs a command in the background and writes output to a log file.
 
 ```bash
-nohup Rscript OpenUrban-workflow.R \
+nohup Rscript 1--OpenUrban-workflow.R \
   --city USA-Phoenix \
   --openurban \
   > openurban.log 2>&1 &
@@ -268,14 +268,14 @@ If running on EC2 and you want the instance to shut down automatically when the 
 
 ```bash
 EC2_TERMINATE_ON_COMPLETE=true \
-Rscript OpenUrban-workflow.R \
+Rscript 1--OpenUrban-workflow.R \
   --city USA-Phoenix \
   --openurban \
 ```
 
 ```bash
 nohup env EC2_TERMINATE_ON_COMPLETE=true \
-Rscript OpenUrban-workflow.R \
+Rscript 1--OpenUrban-workflow.R \
   --city USA-Phoenix \
   --openurban \
   > openurban.log 2>&1 &
