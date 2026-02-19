@@ -59,17 +59,14 @@ The conda environment is used for CIF integration, Earth Engine utilities, and S
 From the root of the repository:
 
 ```bash
-Rscript -e 'install.packages("renv")'
-Rscript -e 'renv::restore()'
+Rscript install_packages.R
+
 ```
 
-This installs all required R packages using the versions recorded in `renv.lock`.
+This installs all required R packages.
 
-To verify:
 
-```bash
-Rscript -e 'renv::status()'
-```
+
 
 ---
 
