@@ -33,7 +33,28 @@ All setup can be completed from the command line — no interactive R or Python 
 
 ---
 
-## 🟢 1. R Environment (renv)
+## 1. Python Environment (Conda)
+
+Create the conda environment:
+
+```bash
+conda env create -f environment.yml
+conda activate open-urban
+```
+
+If the environment already exists:
+
+```bash
+conda env update -f environment.yml
+```
+
+The conda environment is used for CIF integration, Earth Engine utilities, and S3 workflows and also installs some R packages. Make sure to do this before restoring the Renv.
+
+> This repository does not use `reticulate`.
+
+---
+
+## 🟢 2. R Environment (renv)
 
 From the root of the repository:
 
@@ -52,26 +73,6 @@ Rscript -e 'renv::status()'
 
 ---
 
-## 🐍 2. Python Environment (Conda)
-
-Create the conda environment:
-
-```bash
-conda env create -f environment.yml
-conda activate open-urban
-```
-
-If the environment already exists:
-
-```bash
-conda env update -f environment.yml
-```
-
-The Python environment is used for CIF integration, Earth Engine utilities, and S3 workflows.
-
-> R and Python environments are independent. This repository does not use `reticulate`.
-
----
 
 # 🔐 Authentication
 
