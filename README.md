@@ -38,14 +38,14 @@ All setup can be completed from the command line — no interactive R or Python 
 Create the conda environment:
 
 ```bash
-conda env create -f environment.yml
+conda env create -f open-urban.yml
 conda activate open-urban
 ```
 
 If the environment already exists:
 
 ```bash
-conda env update -f environment.yml
+conda env update -f open-urban.yml
 ```
 
 The conda environment is used for CIF integration, Earth Engine utilities, and S3 workflows and also installs some R packages. Make sure to do this before restoring the Renv.
@@ -56,20 +56,17 @@ The conda environment is used for CIF integration, Earth Engine utilities, and S
 
 ## 🟢 2. R Environment (renv)
 
-From the root of the repository:
+From the root of the repository, with the open-urban conda environment active:
 
 ```bash
-Rscript -e 'install.packages("renv")'
-Rscript -e 'renv::restore()'
+Rscript install_packages.R
+
 ```
 
-This installs all required R packages using the versions recorded in `renv.lock`.
+This installs all required R packages.
 
-To verify:
 
-```bash
-Rscript -e 'renv::status()'
-```
+
 
 ---
 

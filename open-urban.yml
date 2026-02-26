@@ -8,8 +8,8 @@ dependencies:
   # ------------------
   - python=3.11
   - pip
+  - icu >=75.1,<76
   - r-base=4.5          # <-- relax patch pin to avoid ICU solver failures
-  - r-renv
 
   # ------------------
   # Geospatial system libs (sf / terra / rasterio / pyproj)
@@ -25,13 +25,17 @@ dependencies:
   - r-s2
   - r-sf
   - r-lwgeom
+  - r-terra
+  - r-raster
+  - r-exactextractr
+
 
   # ------------------
   # Useful native deps
   # ------------------
   - libcurl
   - openssl
-  - sqlite
+  - libsqlite
 
   # ------------------
   # Python deps (prefer conda for compiled geo stack)
