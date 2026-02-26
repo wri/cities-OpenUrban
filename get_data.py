@@ -142,7 +142,7 @@ def get_data(city, output_base=".", batch_size=5):
     import dask
 
     cluster = LocalCluster(
-        n_workers=4,
+        n_workers=2,
         threads_per_worker=1,
         processes=False,
         memory_limit="12GB",
