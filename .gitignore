@@ -165,6 +165,7 @@ cython_debug/
 .RData
 .Renviron
 .Rprofile
+README.html
 
 # Data files
 /data

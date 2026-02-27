@@ -144,7 +144,7 @@ def get_data(city, output_base=".", batch_size=5):
     cluster = LocalCluster(
         n_workers=2,
         threads_per_worker=1,
-        processes=False,
+        processes=True,
         memory_limit="12GB",
         dashboard_address=":0",
         local_directory=f"/tmp/dask-spill-{os.getuid()}",
