@@ -694,6 +694,11 @@ run_city_opportunity <- function(
     names(gid_stats)
   )
   
+  write_s3(
+    gid_stats,
+    glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity__stats.geojson")
+  )
+  
   if (length(cols_to_scale) > 0) {
     gid_stats <- gid_stats |>
       mutate(across(all_of(cols_to_scale), ~ .x * 100))
