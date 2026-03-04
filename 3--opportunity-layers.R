@@ -14,6 +14,8 @@ library(stringr)
 library(glue)
 library(here)
 library(fs)
+library(geoarrow)
+library(sfarrow)
 
 source(here("utils", "write-s3.R"))
 
@@ -254,7 +256,10 @@ run_city_opportunity <- function(
     cool_roof_target_low = 0.62,
     cool_roof_target_high = 0.28,
     terra_tempdir = "/tmp/terra",
-    terra_memfrac = 0.8
+    terra_memfrac = 0.8,
+    save_full_grid = TRUE,
+    resume = TRUE,
+    checkpoint_dir = NULL
 ) {
   
   set_terra_options_auto(memfrac = auto_memfrac(), progress = 3)
@@ -582,7 +587,35 @@ run_city_opportunity <- function(
 
   tile_ids <- unique(tile_grid$tile_name)
   tile_ids <- tile_ids[!is.na(tile_ids)]
-  full_stats <- bind_rows(lapply(tile_ids, process_batch))
+  
+  if (is.null(checkpoint_dir)) {
+    checkpoint_dir <- here("tmp", "opportunity-checkpoints", city)
+  }
+  dir_create(checkpoint_dir, recurse = TRUE)
+  
+  tile_checkpoint_file <- function(id) {
+    id_safe <- str_replace_all(id, "[^A-Za-z0-9._-]", "_")
+    path(checkpoint_dir, glue("tile-{id_safe}.rds"))
+  }
+  
+  tile_results <- vector("list", length(tile_ids))
+  
+  for (i in seq_along(tile_ids)) {
+    id <- tile_ids[[i]]
+    ckpt_file <- tile_checkpoint_file(id)
+    
+    if (isTRUE(resume) && file_exists(ckpt_file)) {
+      message(glue("Resuming from checkpoint ({i}/{length(tile_ids)}): {id}"))
+      tile_results[[i]] <- readRDS(ckpt_file)
+      next
+    }
+    
+    message(glue("Running batch ({i}/{length(tile_ids)}): {id}"))
+    tile_results[[i]] <- process_batch(id)
+    saveRDS(tile_results[[i]], ckpt_file)
+  }
+  
+  full_stats <- bind_rows(tile_results)
   
   gid_stats <- full_stats |>
     group_by(gid) |>
@@ -593,17 +626,24 @@ run_city_opportunity <- function(
   
   if (need_tree) {
     tree_base <- full_stats |>
-      mutate(tree_area_m2 = area_m2 * tree_pct) |>
+      mutate(
+        tree_area_m2 = area_m2 * tree_pct,
+        street_area_m2 = if_else(lulc_code == L_PED, area_m2, 0),
+        street_tree_area_m2 = if_else(lulc_code == L_PED, area_m2 * tree_pct, 0)
+      ) |>
       group_by(gid) |>
       summarise(
         tree_area_m2 = sum(tree_area_m2, na.rm = TRUE),
+        street_area_m2 = sum(street_area_m2, na.rm = TRUE),
+        street_tree_area_m2 = sum(street_tree_area_m2, na.rm = TRUE),
         .groups = "drop"
       )
     
     gid_stats <- gid_stats |>
       left_join(tree_base, by = "gid") |>
       mutate(
-        tree_pct_existing = if_else(total_area_m2 > 0, tree_area_m2 / total_area_m2, NA_real_)
+        tree_pct_existing = if_else(total_area_m2 > 0, tree_area_m2 / total_area_m2, NA_real_),
+        street_tree_pct_existing = if_else(street_area_m2 > 0, street_tree_area_m2 / street_area_m2, NA_real_)
       )
   }
   
@@ -683,6 +723,7 @@ run_city_opportunity <- function(
   cols_to_scale <- intersect(
     c(
       "tree_pct_existing",
+      "street_tree_pct_existing",
       "tree_pct_achievable",
       "delta_tree_pct",
       "street_tree_pct_achievable",
@@ -696,7 +737,7 @@ run_city_opportunity <- function(
   
   write_s3(
     gid_stats,
-    glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity__stats.geojson")
+    glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity__stats.geoparquet")
   )
   
   if (length(cols_to_scale) > 0) {
@@ -707,6 +748,13 @@ run_city_opportunity <- function(
   # -------- Burn back to rasters that match WorldPop EXACTLY --------
   wp_cells <- wp_cells |> 
     left_join(gid_stats, by = "gid")
+  
+  if (isTRUE(save_full_grid)) {
+    write_s3(
+      wp_cells,
+      glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity__full-grid.geoparquet")
+    )
+  }
   
   outputs <- list(full_stats = gid_stats)
   
