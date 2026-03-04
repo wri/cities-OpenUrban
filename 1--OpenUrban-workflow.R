@@ -7,6 +7,13 @@ suppressPackageStartupMessages({
   library(here)
 })
 
+Sys.setenv(
+  GDAL_HTTP_MAX_RETRY = "20",
+  GDAL_HTTP_RETRY_DELAY = "2",
+  CPL_VSIL_CURL_ALLOWED_EXTENSIONS = ".tif,.tiff,.geojson",
+  GDAL_DISABLE_READDIR_ON_OPEN = "EMPTY_DIR"
+)
+
 # ---- source workflows ----
 source(here("2--OpenUrban-generation.R"))
 source(here("3--opportunity-layers.R"))
