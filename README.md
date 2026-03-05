@@ -59,7 +59,7 @@ The conda environment is used for CIF integration, Earth Engine utilities, and S
 From the root of the repository, with the open-urban conda environment active:
 
 ```bash
-Rscript install_packages.R
+Rscript install_R_packages.R
 
 ```
 
