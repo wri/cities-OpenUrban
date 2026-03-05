@@ -9,6 +9,7 @@
 import os
 import time
 import subprocess
+import shutil
 import click
 import boto3
 from google.cloud import storage
@@ -31,12 +32,26 @@ def setup_gee_gcs(gcs_bucket_name: str):
 
     storage_client = storage.Client.from_service_account_json(service_account_json)
 
-    UVX = os.path.expanduser("~/.local/bin/uvx")
-    EE_CMD = [
-        UVX, "--from", "earthengine-api", "earthengine",
-        "--service_account_file", os.path.expanduser(service_account_json),
-        "--project", gee_project
-    ]
+    uvx_bin = os.path.expanduser("~/.local/bin/uvx")
+    ee_bin = shutil.which("earthengine")
+
+    if os.path.isfile(uvx_bin):
+        EE_CMD = [
+            uvx_bin, "--from", "earthengine-api", "earthengine",
+            "--service_account_file", os.path.expanduser(service_account_json),
+            "--project", gee_project
+        ]
+    elif ee_bin:
+        EE_CMD = [
+            ee_bin,
+            "--service_account_file", os.path.expanduser(service_account_json),
+            "--project", gee_project
+        ]
+    else:
+        raise click.ClickException(
+            "Could not find Earth Engine CLI. Install earthengine-api in this env "
+            "or ensure ~/.local/bin/uvx exists."
+        )
 
     return storage_client.bucket(gcs_bucket_name), EE_CMD
 
