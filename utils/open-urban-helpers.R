@@ -4,9 +4,33 @@ library(processx)
 # Python helper (PTY streaming)
 # ============================================================
 
+resolve_conda_binary <- function(conda = "/home/ubuntu/miniconda3/condabin/conda") {
+  candidates <- c(
+    conda,
+    Sys.getenv("CONDA_EXE", unset = ""),
+    "/home/ubuntu/miniconda3/condabin/conda",
+    path.expand("~/miniconda3/condabin/conda"),
+    path.expand("~/anaconda3/condabin/conda"),
+    Sys.which("conda")
+  )
+  
+  for (candidate in unique(candidates)) {
+    if (nzchar(candidate) && file.exists(candidate)) {
+      if (!isTRUE(getOption("openurban.conda_logged"))) {
+        message("Using conda binary: ", candidate)
+        options(openurban.conda_logged = TRUE)
+      }
+      return(candidate)
+    }
+  }
+  
+  stop("Could not find a conda binary. Install conda or set an explicit conda path.")
+}
+
 run_python_live <- function(args,
                             conda = "/home/ubuntu/miniconda3/condabin/conda",
                             wd) {
+  conda <- resolve_conda_binary(conda)
   
   p <- processx::process$new(
     conda,
@@ -119,7 +143,9 @@ gee_tiles_exist <- function(city, grid_ids, collection_id, env_name) {
     paste0(city, "_", grid_ids, collapse = ",")
   )
   
-  out <- system2("/home/ubuntu/miniconda3/condabin/conda",
+  conda <- resolve_conda_binary()
+  
+  out <- system2(conda,
                  args = args,
                  stdout = TRUE,
                  stderr = TRUE)
