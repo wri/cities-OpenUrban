@@ -261,6 +261,19 @@ run_city_opportunity <- function(
     resume = TRUE,
     checkpoint_dir = NULL
 ) {
+  s3_object_exists <- function(file_path) {
+    s3_uri <- if (grepl("^s3://", file_path)) file_path else glue("s3://{file_path}")
+    p <- sub("^s3://", "", s3_uri)
+    bkt <- sub("/.*", "", p)
+    key <- sub("^[^/]+/", "", p)
+    
+    ok <- tryCatch({
+      s3$head_object(Bucket = bkt, Key = key)
+      TRUE
+    }, error = function(e) FALSE)
+    
+    isTRUE(ok)
+  }
   
   set_terra_options_auto(memfrac = auto_memfrac(), progress = 3)
   write_keys <- str_to_lower(write_keys)
@@ -743,6 +756,7 @@ run_city_opportunity <- function(
   # -------- Burn back to rasters that match WorldPop EXACTLY --------
   wp_cells <- wp_cells |> 
     left_join(gid_stats, by = "gid")
+  stats_out_path <- glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity__stats.parquet")
   
   if (isTRUE(save_full_grid)) {
     missing_joined_cols <- setdiff(names(gid_stats), names(wp_cells))
@@ -754,7 +768,7 @@ run_city_opportunity <- function(
     
     write_s3(
       wp_cells,
-      glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity__stats.parquet")
+      stats_out_path
     )
   }
   
@@ -832,6 +846,11 @@ run_city_opportunity <- function(
     )
     
     outputs$cool_roof_baseline <- cool_roof_baseline
+  }
+  
+  if (isTRUE(save_full_grid) && s3_object_exists(stats_out_path) && dir_exists(checkpoint_dir)) {
+    dir_delete(checkpoint_dir)
+    message(glue("Deleted checkpoints after successful save: {checkpoint_dir}"))
   }
   
   invisible(outputs)
