@@ -48,6 +48,26 @@ parse_cities <- function(x) {
   unique(cities)
 }
 
+extract_openurban_mode <- function(args) {
+  idx <- grep("^--openurban\\[[dDgG]+\\]$", args)
+  if (length(idx) > 1) {
+    stop("Specify only one --openurban[...] flag.", call. = FALSE)
+  }
+  if (length(idx) == 0) {
+    return(list(args = args, mode = NULL))
+  }
+  
+  raw_mode <- sub("^--openurban\\[([dDgG]+)\\]$", "\\1", args[idx])
+  chars <- unique(str_split(tolower(raw_mode), "")[[1]])
+  bad <- setdiff(chars, c("d", "g"))
+  if (length(bad) > 0 || length(chars) == 0) {
+    stop("Invalid --openurban[...] mode. Use only d and/or g.", call. = FALSE)
+  }
+  
+  mode <- paste(chars, collapse = "")
+  list(args = args[-idx], mode = mode)
+}
+
 # ---- CLI options ----
 option_list <- list(
   make_option(c("-c", "--city"), type = "character",
@@ -55,7 +75,7 @@ option_list <- list(
   # make_options(c("--add_urban_extent"), action = "store_true", default = FALSE,
   #              help = "Add urban extent to CIF"),
   make_option(c("--openurban"), action = "store_true", default = FALSE,
-              help = "Generate OpenUrban LULC and upload to S3/GEE"),
+              help = "Run OpenUrban default mode (equivalent to --openurban[dg]). Also supported: --openurban[d], --openurban[g], --openurban[dg]"),
   make_option(c("--opportunity"), type = "character", default = NULL,
               help = "Comma-separated opportunity layers: trees__all-trees,cool-roofs__all-roofs"),
   make_option(c("--fail-fast"), action = "store_true", default = FALSE,
@@ -63,7 +83,14 @@ option_list <- list(
 )
 
 parser <- OptionParser(option_list = option_list)
-opt <- parse_args(parser)
+raw_args <- commandArgs(trailingOnly = TRUE)
+openurban_mode_info <- extract_openurban_mode(raw_args)
+opt <- parse_args(parser, args = openurban_mode_info$args)
+
+openurban_requested <- isTRUE(opt$openurban) || !is.null(openurban_mode_info$mode)
+openurban_mode <- if (is.null(openurban_mode_info$mode)) "dg" else openurban_mode_info$mode
+openurban_download <- openurban_requested && str_detect(openurban_mode, "d")
+openurban_generate <- openurban_requested && str_detect(openurban_mode, "g")
 
 if (is.null(opt$city) || !nzchar(opt$city)) {
   print_help(parser)
@@ -73,14 +100,18 @@ if (is.null(opt$city) || !nzchar(opt$city)) {
 cities <- parse_cities(opt$city)
 opp_keys <- parse_opportunity_keys(opt$opportunity)
 
-if (!opt$openurban && length(opp_keys) == 0) {
+if (!openurban_requested && length(opp_keys) == 0) {
   print_help(parser)
   stop("\nNothing to do: specify --openurban and/or --opportunity ...", call. = FALSE)
 }
 
 message("Cities: ", paste(cities, collapse = ", "))
 # message("Add urban extent: ", opts$add_urban_extent)
-message("Run OpenUrban: ", opt$openurban)
+message("Run OpenUrban: ", openurban_requested)
+if (openurban_requested) {
+  message("OpenUrban mode: ", openurban_mode,
+          " (download=", openurban_download, ", generate=", openurban_generate, ")")
+}
 message("Opportunity keys: ", if (length(opp_keys) == 0) "(none)" else paste(opp_keys, collapse = ", "))
 message("Fail fast: ", opt$`fail-fast`)
 
@@ -101,10 +132,14 @@ for (city in cities) {
     #   message("==> Urban extent available.")
     # }
     
-    if (isTRUE(opt$openurban)) {
-      message("==> Generating OpenUrban...")
-      generate_openurban_city(city)
-      message("==> OpenUrban saved to s3 and GEE.")
+    if (isTRUE(openurban_requested)) {
+      message("==> Running OpenUrban...")
+      generate_openurban_city(
+        city = city,
+        download_data = openurban_download,
+        generate_tiles = openurban_generate
+      )
+      message("==> OpenUrban step complete.")
     }
     
     if (length(opp_keys) > 0) {
@@ -179,7 +214,10 @@ if (length(bad_cities) == 0) {
     
     writeLines(glue("Run timestamp: {format(Sys.time(), '%Y-%m-%d %H:%M:%S %Z')}"), con)
     writeLines(glue("City: {ct}"), con)
-    writeLines(glue("Run OpenUrban: {opt$openurban}"), con)
+    writeLines(glue("Run OpenUrban: {openurban_requested}"), con)
+    if (isTRUE(openurban_requested)) {
+      writeLines(glue("OpenUrban mode: {openurban_mode} (download={openurban_download}, generate={openurban_generate})"), con)
+    }
     writeLines(glue("Opportunity keys: {if (length(opp_keys)==0) '(none)' else paste(opp_keys, collapse=', ')}"), con)
     writeLines(glue("Fail fast: {opt$`fail-fast`}"), con)
     writeLines(strrep("-", 60), con)

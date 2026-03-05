@@ -416,17 +416,30 @@ create_lulc_tile <- function(
 # City wrapper ####
 # ============================================================
 
-generate_openurban_city <- function(city) {
+generate_openurban_city <- function(city, download_data = TRUE, generate_tiles = TRUE) {
   
   city_path <- here("data", city)
   dir.create(city_path, recursive = TRUE, showWarnings = FALSE)
   
-  args <- c(
-    "run","--no-capture-output",
-    "-n","open-urban",
-    py,"-u","get_data.py", city
-  )
-  run_python_live(args, wd = here())
+  if (isTRUE(download_data)) {
+    args <- c(
+      "run","--no-capture-output",
+      "-n","open-urban",
+      py,"-u","get_data.py", city
+    )
+    run_python_live(args, wd = here())
+  } else {
+    message("Skipping data download (--openurban mode without d).")
+  }
+  
+  if (!isTRUE(generate_tiles)) {
+    message("Skipping tile generation/upload (--openurban mode without g).")
+    return(invisible(list(
+      city = city,
+      downloaded = download_data,
+      generated = FALSE
+    )))
+  }
   
   grid <- st_read(glue("https://wri-cities-tcm.s3.us-east-1.amazonaws.com/OpenUrban/{city}/city_grid/city_grid.geojson"),
                   quiet = TRUE)
@@ -447,10 +460,14 @@ generate_openurban_city <- function(city) {
     return(invisible(list(city=city, s3=s3_check)))
   }
   
-  message("S3 complete. Deleting tmp and local city folder...")
+  message("S3 complete. Cleaning local outputs...")
   
   unlink(here("tmp", city), recursive = TRUE, force = TRUE)
-  unlink(here("data", city), recursive = TRUE, force = TRUE)
+  if (isTRUE(download_data)) {
+    unlink(here("data", city), recursive = TRUE, force = TRUE)
+  } else {
+    message("Keeping existing local data folder because this run skipped download.")
+  }
   
   # Upload serially to GEE
   # conda <- "/home/ubuntu/miniconda3/condabin/conda"
@@ -477,7 +494,11 @@ generate_openurban_city <- function(city) {
   #   run_python_live(args, here())
   # }
   
-  
+  invisible(list(
+    city = city,
+    downloaded = download_data,
+    generated = TRUE
+  ))
 }
 
 # ============================================================
@@ -485,7 +506,6 @@ generate_openurban_city <- function(city) {
 # ============================================================
 
 # generate_openurban_city("NLD-Rotterdam")
-
 
 
 
