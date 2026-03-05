@@ -668,12 +668,12 @@ run_city_opportunity <- function(
           tree_area_m2,
           plantable_area_m2 * target
         ),
-        delta_tree_area_m2 = target_area_m2 - tree_area_m2
+        delta_tree_area_m2_row = target_area_m2 - tree_area_m2
       ) |>
       group_by(gid) |>
       summarise(
-        delta_tree_area_m2 = sum(delta_tree_area_m2, na.rm = TRUE),
-        delta_street_tree_area_m2 = sum(delta_tree_area_m2[lulc_code == 700], na.rm = TRUE),
+        delta_tree_area_m2 = sum(delta_tree_area_m2_row, na.rm = TRUE),
+        delta_street_tree_area_m2 = sum(delta_tree_area_m2_row[lulc_code == 700], na.rm = TRUE),
         .groups = "drop"
       )
     
