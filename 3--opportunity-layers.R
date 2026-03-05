@@ -735,11 +735,6 @@ run_city_opportunity <- function(
     names(gid_stats)
   )
   
-  write_s3(
-    gid_stats,
-    glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity__stats.geoparquet")
-  )
-  
   if (length(cols_to_scale) > 0) {
     gid_stats <- gid_stats |>
       mutate(across(all_of(cols_to_scale), ~ .x * 100))
@@ -750,9 +745,16 @@ run_city_opportunity <- function(
     left_join(gid_stats, by = "gid")
   
   if (isTRUE(save_full_grid)) {
+    missing_joined_cols <- setdiff(names(gid_stats), names(wp_cells))
+    if (length(missing_joined_cols) > 0) {
+      stop(glue(
+        "Missing columns after join in wp_cells: {paste(missing_joined_cols, collapse = ', ')}"
+      ))
+    }
+    
     write_s3(
       wp_cells,
-      glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity__full-grid.geoparquet")
+      glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity__stats.parquet")
     )
   }
   

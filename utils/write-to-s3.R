@@ -2,7 +2,7 @@
 
 # Standalone helper to write various R objects to S3 using paws
 # - Infers format from file extension
-# - Supports: parquet / geoparquet, sf/sfc (vector), terra SpatRaster, csv
+# - Supports: parquet, sf/sfc (vector), terra SpatRaster, csv
 # - Expects `file_path` in the form "bucket/key/filename.ext" or "bucket/…"
 
 # ---- Package checks -------------------------------------------------------
@@ -27,7 +27,7 @@ if (length(.missing) > 0) {
 rm(.required_pkgs, .missing)
 
 # ---- Optional packages (checked lazily inside the function) --------------
-# - sfarrow (for GeoParquet with sf)
+# - sfarrow (for Parquet with sf geometry)
 # - arrow   (for Parquet with data.frames / tibbles)
 
 # ---- Defaults you might want in other scripts ----------------------------
@@ -55,12 +55,12 @@ write_s3 <- function(obj, out_file_path, s3_client = s3) {
   tmp <- tempfile(fileext = paste0(".", ext))
   
   # choose writer + content-type
-  if (ext %in% c("parquet", "geoparquet", "pq")) {
-    # write Parquet / GeoParquet
+  if (ext %in% c("parquet", "pq")) {
+    # write Parquet
     if (inherits(obj, "sf") || inherits(obj, "sfc")) {
       if (inherits(obj, "sfc")) obj <- sf::st_as_sf(obj)
       if (!requireNamespace("sfarrow", quietly = TRUE))
-        stop("Package 'sfarrow' is required to write GeoParquet.")
+        stop("Package 'sfarrow' is required to write Parquet with sf geometry.")
       sfarrow::st_write_parquet(obj, tmp)
     } else {
       if (!requireNamespace("arrow", quietly = TRUE))

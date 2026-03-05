@@ -14,14 +14,14 @@ write_s3 <- function(obj, file_path) {
     if (file.exists(tmp)) unlink(tmp)
   }, add = TRUE)
   
-  # write to a local temp file (keep 2nd function behavior + add geoparquet)
+  # write to a local temp file (supports Parquet for spatial and tabular data)
   if (inherits(obj, "sf") || inherits(obj, "sfc")) {
     
-    # NEW: support GeoParquet / Parquet for sf/sfc
-    if (ext %in% c("parquet", "geoparquet", "pq")) {
+    # support Parquet for sf/sfc
+    if (ext %in% c("parquet", "pq")) {
       if (inherits(obj, "sfc")) obj <- sf::st_as_sf(obj)
       if (!requireNamespace("sfarrow", quietly = TRUE)) {
-        stop("Package 'sfarrow' is required to write GeoParquet.")
+        stop("Package 'sfarrow' is required to write Parquet with sf geometry.")
       }
       sfarrow::st_write_parquet(obj, tmp)
       ctype <- "application/octet-stream"  # keep 2nd fn style (not fancy MIME)
