@@ -124,6 +124,7 @@ Notes:
 - Cities must use the standard `{ISO3}-{City_Name}` format
 - Separate multiple cities with commas (no spaces)
 - If processing fails for a city, execution continues to the next
+- If you already have the data downloaded and just need to generate the tiles, use the flag `--openurban[g]`
 
 ---
 
