@@ -348,7 +348,12 @@ create_lulc_tile <- function(
   # keep only non-NULL
   rasts <- Filter(Negate(is.null), rasts)
   
-  raster_stack <- c(esa_rast, rast(rasts))   
+  # Tiles with no vector overlays should still produce ESA-only LULC.
+  raster_stack <- if (length(rasts) == 0) {
+    esa_rast
+  } else {
+    c(esa_rast, rast(rasts))
+  }
   LULC <- app(raster_stack, fun = max, na.rm = TRUE)
   
   
@@ -506,7 +511,6 @@ generate_openurban_city <- function(city, download_data = TRUE, generate_tiles =
 # ============================================================
 
 # generate_openurban_city("NLD-Rotterdam")
-
 
 
 
