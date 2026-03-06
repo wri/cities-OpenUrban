@@ -410,23 +410,17 @@ def get_esa(city, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False):
         # Check if all pixels are water (value 80 in ESA WorldCover)
         # If so, skip this tile
         esa = EsaWorldCover().get_data(bbox_fetch, spatial_resolution=10)
-        esa_unique_values = np.unique(esa.values)
-        esa_unique_values = esa_unique_values[~np.isnan(esa_unique_values)]  # Remove NaN values
-        
-        # ESA WorldCover value 80 = Permanent water bodies
-        if len(esa_unique_values) == 1 and esa_unique_values[0] == 80:
-            print(f"Cell {grid_cell_id} is all water, skipping...")
-        else:
-            esa = EsaWorldCover().get_data(bbox_fetch, spatial_resolution=1)
 
-            if not os.path.exists(esa_path):
-                os.makedirs(esa_path)
+        esa = EsaWorldCover().get_data(bbox_fetch, spatial_resolution=1)
 
-            # Write raster to tif file
-            esa.rio.to_raster(raster_path=esa_file)
+        if not os.path.exists(esa_path):
+            os.makedirs(esa_path)
 
-            if copy_to_s3:
-                to_s3(esa_file, data_path)
+        # Write raster to tif file
+        esa.rio.to_raster(raster_path=esa_file)
+
+        if copy_to_s3:
+            to_s3(esa_file, data_path)
 
 def get_anbh(city, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False):
     """
