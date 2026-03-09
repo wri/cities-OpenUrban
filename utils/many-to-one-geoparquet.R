@@ -1,5 +1,10 @@
 #!/usr/bin/env Rscript
 
+# Rscript utils/many-to-one-geoparquet.R \
+# --city=USA-Boston \
+# --types=buildings,roads,open_space,water,parking
+
+
 suppressPackageStartupMessages({
   library(sf)
   library(stringr)
