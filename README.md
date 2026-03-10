@@ -126,6 +126,22 @@ Notes:
 - If processing fails for a city, execution continues to the next
 - If you already have the data downloaded and just need to generate the tiles, use the flag `--openurban[g]`
 
+### Download Only Selected Raw Layers
+
+Use `get_data.py` when you want to fetch a subset of source data instead of running the full OpenUrban workflow.
+
+Download only buildings for one city and merge them into `buildings_all.parquet`:
+
+```bash
+python get_data.py USA-Boston --layers buildings --skip-s3-upload
+```
+
+Download only roads for one city:
+
+```bash
+python get_data.py USA-Boston --layers roads --skip-s3-upload
+```
+
 ---
 
 ## 🌳 Generate Opportunity Layers

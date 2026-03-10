@@ -105,36 +105,101 @@ def _malloc_trim():
         pass
 
 
-def get_data(city, output_base=".", batch_size=5):
+def _prepare_city(city, data_path, copy_to_s3):
+    city_polygon = get_city_polygon(city, data_path=data_path, copy_to_s3=copy_to_s3)
+
+    print("creating city grid")
+    city_grid = create_grid_for_city(city, city_polygon, data_path=data_path, copy_to_s3=copy_to_s3)
+
+    return city_grid
+
+
+def _buildings_only(city, data_path, city_grid, copy_to_s3):
+    from dask.distributed import Client, LocalCluster
+    from dask import delayed
+    import dask
+
+    cluster = LocalCluster(
+        n_workers=2,
+        threads_per_worker=1,
+        processes=True,
+        memory_limit="12GB",
+        dashboard_address=":0",
+        local_directory=f"/tmp/dask-spill-{os.getuid()}",
+    )
+    client = Client(cluster)
+
+    print(f"Dask: {client}")
+    print(f"Dask dashboard: {client.dashboard_link}")
+
+    try:
+        per_cell = []
+        grid_crs = city_grid.crs
+        grid_crs_str = grid_crs.srs if hasattr(grid_crs, "srs") else str(grid_crs)
+
+        for _, cell in city_grid.iterrows():
+            gid = cell["ID"]
+            geom = cell["geometry"]
+
+            bbox_tile = GeoExtent(bbox=geom.bounds, crs=grid_crs_str)
+            bbox_fetch = bbox_tile.buffer_utm_bbox(10)
+
+            per_cell.append((gid, bbox_fetch))
+
+        print(f"Prepared {len(per_cell)} cells.")
+        print("=" * 60)
+
+        building_tasks = [
+            delayed(get_buildings)(city, bbox_fetch, gid, data_path=data_path, copy_to_s3=copy_to_s3)
+            for gid, bbox_fetch in per_cell
+        ]
+
+        print(f"Running BUILDINGS tasks: {len(building_tasks)}")
+        dask.compute(*building_tasks)
+        print("BUILDINGS tasks complete.")
+    finally:
+        client.close()
+        cluster.close()
+
+    merge_building_tiles(city, data_path=data_path, copy_to_s3=copy_to_s3)
+
+
+def get_data(city, output_base=".", batch_size=5, layers=None, copy_to_s3=True):
 
     data_path = os.path.join(output_base, "data")
 
-    # Get city_polygon -------------------------------------------------
-    city_polygon = get_city_polygon(city, data_path=data_path, copy_to_s3=True)
+    if layers is None:
+        layers = ["all"]
+    layers = set(layers)
+    run_all = "all" in layers
 
-    # Create the grid for the city -------------------------------------------------
-    # City grid is in 4326
-    print("creating city grid")
-    city_grid = create_grid_for_city(city, city_polygon, data_path=data_path, copy_to_s3=True)
+    city_grid = _prepare_city(city, data_path=data_path, copy_to_s3=copy_to_s3)
 
-    # Get city grid in epsg 4326 for OSM data
-    # city_grid_4326 = city_grid.to_crs("EPSG:4326")
+    if layers == {"buildings"}:
+        _buildings_only(city, data_path=data_path, city_grid=city_grid, copy_to_s3=copy_to_s3)
+        return
+
     minx, miny, maxx, maxy = city_grid.total_bounds
     bbox = GeoExtent(bbox=(minx, miny, maxx, maxy), crs="EPSG:4326")
 
-    print("getting roads from OSM")
-    get_roads(city, bbox, grid_cell_id="all", data_path=data_path, copy_to_s3=True)
+    if run_all or "roads" in layers:
+        print("getting roads from OSM")
+        get_roads(city, bbox, grid_cell_id="all", data_path=data_path, copy_to_s3=copy_to_s3)
 
-    print("getting open space from OSM")
-    get_open_space(city, bbox, grid_cell_id="all", data_path=data_path, copy_to_s3=True)
+    if run_all or "open_space" in layers:
+        print("getting open space from OSM")
+        get_open_space(city, bbox, grid_cell_id="all", data_path=data_path, copy_to_s3=copy_to_s3)
 
-    print("getting water from OSM")
-    get_water(city, bbox, grid_cell_id="all", data_path=data_path, copy_to_s3=True)
+    if run_all or "water" in layers:
+        print("getting water from OSM")
+        get_water(city, bbox, grid_cell_id="all", data_path=data_path, copy_to_s3=copy_to_s3)
 
-    print("getting parking from OSM")
-    get_parking(city, bbox, grid_cell_id="all", data_path=data_path, copy_to_s3=True)
+    if run_all or "parking" in layers:
+        print("getting parking from OSM")
+        get_parking(city, bbox, grid_cell_id="all", data_path=data_path, copy_to_s3=copy_to_s3)
 
-    summarize_average_lanes(city, data_path=data_path, copy_to_s3=True)
+    if run_all or "roads" in layers:
+        summarize_average_lanes(city, data_path=data_path, copy_to_s3=copy_to_s3)
 
     # Start a dask client
     from dask.distributed import Client, LocalCluster
@@ -177,7 +242,7 @@ def get_data(city, output_base=".", batch_size=5):
         light_tasks = []
         for gid, bbox_fetch in per_cell:
             light_tasks.extend([
-                delayed(get_buildings)(city, bbox_fetch, gid, data_path=data_path, copy_to_s3=True),
+                delayed(get_buildings)(city, bbox_fetch, gid, data_path=data_path, copy_to_s3=copy_to_s3),
                 delayed(get_urban_land_use)(city, bbox_fetch, gid, data_path=data_path, copy_to_s3=False),
                 delayed(get_anbh)(city, bbox_fetch, grid_cell_id=gid, data_path=data_path, copy_to_s3=False),
             ])
@@ -244,12 +309,17 @@ def get_data(city, output_base=".", batch_size=5):
         esa_cluster.close()
 
     # Create per-tile vector files from all-files
-    make_vector_tiles_from_all(city, data_path, "roads", city_grid)
-    make_vector_tiles_from_all(city, data_path, "open_space", city_grid)
-    make_vector_tiles_from_all(city, data_path, "water", city_grid)
-    make_vector_tiles_from_all(city, data_path, "parking", city_grid)
+    if run_all or "roads" in layers:
+        make_vector_tiles_from_all(city, data_path, "roads", city_grid)
+    if run_all or "open_space" in layers:
+        make_vector_tiles_from_all(city, data_path, "open_space", city_grid)
+    if run_all or "water" in layers:
+        make_vector_tiles_from_all(city, data_path, "water", city_grid)
+    if run_all or "parking" in layers:
+        make_vector_tiles_from_all(city, data_path, "parking", city_grid)
 
-    merge_building_tiles(city, data_path=data_path, copy_to_s3=True)
+    if run_all or "buildings" in layers:
+        merge_building_tiles(city, data_path=data_path, copy_to_s3=copy_to_s3)
 
 
 def _parse_args():
@@ -267,12 +337,29 @@ def _parse_args():
         default=5,
         help="How many grid cells to process per batch (default: 5).",
     )
+    parser.add_argument(
+        "--layers",
+        default="all",
+        help="Comma-separated layers to fetch. Use 'buildings' for buildings only. Default: all.",
+    )
+    parser.add_argument(
+        "--skip-s3-upload",
+        action="store_true",
+        help="Skip uploading generated files to S3.",
+    )
     return parser.parse_args()
 
 
 def main():
     args = _parse_args()
-    get_data(args.city, output_base=args.output_base, batch_size=args.batch_size)
+    layers = [layer.strip() for layer in args.layers.split(",") if layer.strip()]
+    get_data(
+        args.city,
+        output_base=args.output_base,
+        batch_size=args.batch_size,
+        layers=layers,
+        copy_to_s3=not args.skip_s3_upload,
+    )
 
 
 if __name__ == "__main__":
