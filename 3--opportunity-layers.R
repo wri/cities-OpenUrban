@@ -191,12 +191,24 @@ find_city_dataset_folder <- function(s3_parent, city, dataset_stub, profile = "c
     stop("No matching folder found under ", s3_parent, " for city=", city, " stub=", dataset_stub, call. = FALSE)
   }
   
-  # Prefer most recent by parsing StartDate/EndDate if present; otherwise take last lexicographically
-  # (Lexicographic works well if dates are YYYY-MM-DD)
-  matches <- sort(matches)
-  
-  # if multiple, take the last (usually latest date range)
-  matches[length(matches)]
+  # Prefer explicitly dated files over StartYear_None/EndYear_None fallbacks.
+  start_dates <- stringr::str_match(matches, "StartDate_([0-9]{4}-[0-9]{2}-[0-9]{2})")[, 2]
+  end_dates <- stringr::str_match(matches, "EndDate_([0-9]{4}-[0-9]{2}-[0-9]{2})")[, 2]
+
+  ranked <- tibble::tibble(
+    match = matches,
+    has_dates = !is.na(start_dates) & !is.na(end_dates),
+    start_date = as.Date(start_dates),
+    end_date = as.Date(end_dates)
+  ) %>%
+    dplyr::arrange(
+      dplyr::desc(has_dates),
+      dplyr::desc(end_date),
+      dplyr::desc(start_date),
+      dplyr::desc(match)
+    )
+
+  ranked$match[[1]]
 }
 
 
