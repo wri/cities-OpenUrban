@@ -419,7 +419,7 @@ run_city_opportunity <- function(
     
     # Now list tiles inside the discovered folder
     albedo_tiles <- list_tiles(glue("{s3_parent}{folder_name}/"), profile = "cities-data-dev")
-    albedo_tiles <- albedo_tiles[which(str_remove(albedo_tiles, ".tif") %in% lulc_grid$tile_name)]
+    albedo_tiles <- albedo_tiles[which(str_remove(albedo_tiles, ".tif") %in% str_remove(lulc_tiles, ".tif"))]
     
     albedo_paths <- glue(
       "{cif_aws_http}/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median__NumSeasons_3/tif/",
@@ -438,7 +438,7 @@ run_city_opportunity <- function(
     tree_tiles <- list_tiles(glue("s3://wri-cities-indicators/{cif_prefix}/TreeCanopyHeight/tif/",
                                   "{city}__urban_extent__TreeCanopyHeight__Height_3.tif/"))
     
-    tree_tiles <- tree_tiles[which(str_remove(tree_tiles, ".tif") %in% lulc_grid$tile_name)]
+    tree_tiles <- tree_tiles[which(str_remove(tree_tiles, ".tif") %in% str_remove(lulc_tiles, ".tif"))]
     
     treeheight_paths <- glue(
       "{cif_aws_http}/{cif_prefix}/TreeCanopyHeight/tif/",
