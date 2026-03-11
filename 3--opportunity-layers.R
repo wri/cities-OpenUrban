@@ -113,13 +113,32 @@ load_and_merge <- function(paths) {
     stop("No raster paths provided")
   }
   
-  rasters <- lapply(paths, rast_retry)
-  
-  if (length(rasters) == 1) {
-    return(rasters[[1]])   # just return the single raster
-  } else {
-    return(do.call(merge, c(rasters)))  # merge multiple rasters
+  if (length(paths) == 1) {
+    return(rast_retry(paths[[1]]))
   }
+  
+  last_err <- NULL
+  attempts <- 6
+  base_sleep <- 0.5
+  
+  for (i in seq_len(attempts)) {
+    out <- tryCatch({
+      rasters <- lapply(paths, rast_retry, quiet = TRUE)
+      do.call(merge, c(rasters))
+    }, error = function(e) {
+      last_err <<- e
+      NULL
+    })
+    
+    if (!is.null(out)) return(out)
+    
+    sleep <- base_sleep * (1.6 ^ (i - 1)) + stats::runif(1, 0, 0.25)
+    message(sprintf("merge() failed (%d/%d). Retrying in %.2fs", i, attempts, sleep))
+    Sys.sleep(sleep)
+  }
+  
+  stop(sprintf("[load_and_merge] Failed after %d attempts:\n%s",
+               attempts, conditionMessage(last_err)), call. = FALSE)
 }
 
 list_tiles <- function(folder_s3_url, profile = "cities-data-dev") {
