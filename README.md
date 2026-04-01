@@ -168,16 +168,6 @@ Rscript 1--OpenUrban-workflow.R \
 
 ---
 
-### Run specific opportunity layers
-
-```bash
-Rscript 1--OpenUrban-workflow.R \
-  --city USA-Atlanta \
-  --opportunity trees__all-plantable,cool-roofs__all-roofs
-```
-
----
-
 ### Available Opportunity Options
 
 | Option | Definition |
@@ -188,6 +178,18 @@ Rscript 1--OpenUrban-workflow.R \
 | `trees__all-pedestrian` | Achievable tree cover applied to street right-of-ways only |
 | `cool-roofs__all-roofs` | Cool roof opportunity applied to all buildings |
 | `all` | All scenarios |
+
+---
+
+### Run specific opportunity layers
+
+In rare cases it may be necessary to generate a single opportunity layer for a city. This is possible via:
+
+```bash
+Rscript 1--OpenUrban-workflow.R \
+  --city USA-Atlanta \
+  --opportunity trees__all-plantable,cool-roofs__all-roofs
+```
 
 ---
 
