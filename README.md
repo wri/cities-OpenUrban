@@ -54,7 +54,7 @@ The conda environment is used for CIF integration, Earth Engine utilities, and S
 
 ---
 
-## 🟢 2. R Environment (renv)
+## 🟢 2. R Environment 
 
 From the root of the repository, with the open-urban conda environment active:
 
