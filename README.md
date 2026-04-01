@@ -1,6 +1,6 @@
 # 🌍 cities-OpenUrban
 
-Internal repository for generating **OpenUrban land use/land cover (LULC)** data and associated **heat-resilient infrastructure opportunity layers**.
+Repository for generating **OpenUrban land use/land cover (LULC)** data and associated **heat-resilient infrastructure opportunity layers**.
 
 This repository supports:
 
@@ -48,7 +48,7 @@ If the environment already exists:
 conda env update -f open-urban.yml
 ```
 
-The conda environment is used for CIF integration, Earth Engine utilities, and S3 workflows and also installs some R packages. Make sure to do this before restoring the Renv.
+The conda environment is used for CIF integration, Earth Engine utilities, and S3 workflows and also installs some R packages. 
 
 > This repository does not use `reticulate`.
 
@@ -152,7 +152,7 @@ python get_data.py USA-Boston --layers roads --skip-s3-upload
 - `WorldPop`
 - `OpenUrban`
 - `AlbedoCloudMasked__ZonalStats_median__NumSeasons_3` (dates specified in filename)
-- `TreeCanopyHeight` (height threshold = 3 meters)
+- `TreeCanopyHeight` (height threshold >= 3 meters)
 
 > ⚠ If OpenUrban was just generated, you must publish it to CIF (via publish_layers.py in the [cities-cif-portal](https://github.com/wri/cities-cif-portal/tree/main) repository) before generating opportunity layers.
 
