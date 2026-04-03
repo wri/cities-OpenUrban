@@ -366,12 +366,13 @@ run_city_opportunity <- function(
   }
   
   cif_aws_http <- glue("https://{cif_bucket}.s3.us-east-1.amazonaws.com")
+  cif_city <- str_remove(city, "_TEST")
   
   # -------- Paths (defaults) --------
   if (is.null(urban_extent_path)) {
     urban_extent_path <- glue(
       "{cif_aws_http}/{cif_prefix}/UrbanExtents/geojson/",
-      "{city}__urban_extent__UrbanExtents__StartYear_2020_EndYear_2020.geojson"
+      "{cif_city}__urban_extent__UrbanExtents__StartYear_2020_EndYear_2020.geojson"
     )
     
     urban_extent <- st_read(urban_extent_path, quiet = TRUE) %>% 
@@ -380,29 +381,29 @@ run_city_opportunity <- function(
   if (is.null(worldpop_path)) {
     worldpop_path <- glue(
       "{cif_aws_http}/{cif_prefix}/WorldPop/tif/",
-      "{city}__urban_extent__WorldPop__StartYear_2020_EndYear_2020.tif"
+      "{cif_city}__urban_extent__WorldPop__StartYear_2020_EndYear_2020.tif"
     )
   }
   if (is.null(lulc_path)) {
     lulc_grid <- st_read(glue(
       "{cif_aws_http}/{cif_prefix}/OpenUrban/tif/",
-      "{city}__urban_extent__OpenUrban.tif/fishnet_grid.json"
+      "{cif_city}__urban_extent__OpenUrban.tif/fishnet_grid.json"
     )) %>% st_filter(st_as_sf(urban_extent))
     
     lulc_tiles <- list_tiles(glue("s3://wri-cities-indicators/{cif_prefix}/OpenUrban/tif/",
-                                  "{city}__urban_extent__OpenUrban.tif/"))
+                                  "{cif_city}__urban_extent__OpenUrban.tif/"))
     
     lulc_tiles <- lulc_tiles[which(str_remove(lulc_tiles, ".tif") %in% lulc_grid$tile_name)]
 
     lulc_paths <- glue(
       "{cif_aws_http}/{cif_prefix}/OpenUrban/tif/",
-      "{city}__urban_extent__OpenUrban.tif/{lulc_tiles}"
+      "{cif_city}__urban_extent__OpenUrban.tif/{lulc_tiles}"
     )
     
     if (length(lulc_tiles) != nrow(lulc_grid)) {
       stop(glue("Missing OpenUrban tiles in ", 
                 "s3://wri-cities-indicators/{cif_prefix}/OpenUrban/tif/",
-                 "{city}__urban_extent__OpenUrban.tif/"))
+                 "{cif_city}__urban_extent__OpenUrban.tif/"))
     }
   }
 
@@ -412,7 +413,7 @@ run_city_opportunity <- function(
     
     folder_name <- find_city_dataset_folder(
       s3_parent = s3_parent,
-      city = city,
+      city = cif_city,
       dataset_stub = "AlbedoCloudMasked__ZonalStats_median__NumSeasons_3",
       profile = "cities-data-dev"
     )
@@ -437,19 +438,19 @@ run_city_opportunity <- function(
   
   if (need_tree && is.null(treeheight_path)) {
     tree_tiles <- list_tiles(glue("s3://wri-cities-indicators/{cif_prefix}/TreeCanopyHeight/tif/",
-                                  "{city}__urban_extent__TreeCanopyHeight__Height_3.tif/"))
+                                  "{cif_city}__urban_extent__TreeCanopyHeight__Height_3.tif/"))
     
     tree_tiles <- tree_tiles[which(str_remove(tree_tiles, ".tif") %in% str_remove(lulc_tiles, ".tif"))]
     
     treeheight_paths <- glue(
       "{cif_aws_http}/{cif_prefix}/TreeCanopyHeight/tif/",
-      "{city}__urban_extent__TreeCanopyHeight__Height_3.tif/{tree_tiles}"
+      "{cif_city}__urban_extent__TreeCanopyHeight__Height_3.tif/{tree_tiles}"
     )
     
     if (length(tree_tiles) != nrow(lulc_grid)) {
       stop(glue("Missing tree canopy tiles in ", 
                 "s3://wri-cities-indicators/{cif_prefix}/TreeCanopyHeight/tif/",
-                "{city}__urban_extent__TreeCanopyHeight__Height_3.tif/"))
+                "{cif_city}__urban_extent__TreeCanopyHeight__Height_3.tif/"))
     }
 
   }
