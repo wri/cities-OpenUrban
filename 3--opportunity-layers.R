@@ -372,7 +372,7 @@ run_city_opportunity <- function(
   if (is.null(urban_extent_path)) {
     urban_extent_path <- glue(
       "{cif_aws_http}/{cif_prefix}/UrbanExtents/geojson/",
-      "{cif_city}__urban_extent__UrbanExtents__StartYear_2020_EndYear_2020.geojson"
+      "{city}__urban_extent__UrbanExtents__StartYear_2020_EndYear_2020.geojson"
     )
     
     urban_extent <- st_read(urban_extent_path, quiet = TRUE) %>% 
