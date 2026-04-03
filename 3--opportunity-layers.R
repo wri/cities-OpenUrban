@@ -414,8 +414,9 @@ run_city_opportunity <- function(
       s3_parent = s3_parent,
       city = city,
       dataset_stub = "AlbedoCloudMasked__ZonalStats_median__NumSeasons_3",
-      profile = "cities-data-dev"   
+      profile = "cities-data-dev"
     )
+    # folder_name <- "IDN-Jakarta__urban_extent__AlbedoCloudMasked__ZonalStats_median__NumSeasons_3__StartYear_None_EndYear_None.tif"
     
     # Now list tiles inside the discovered folder
     albedo_tiles <- list_tiles(glue("{s3_parent}{folder_name}/"), profile = "cities-data-dev")
