@@ -146,15 +146,15 @@ python get_data.py USA-Boston --layers roads --skip-s3-upload
 
 ## 🌳 Generate Opportunity Layers
 
-Currently, the opportunity layers can **only** be generated for an urban extent.
+Currently, the opportunity layers can **only** be generated for an urban extent. All layers are read from the `wri-cities-indicators` bucket in s3.
 
 ### Required CIF datasets
 
-- `UrbanExtents`, read from the `wri-cities-indicators` bucket in s3.
-- `WorldPop`, read from the `wri-cities-indicators` bucket in s3.
-- `OpenUrban`, read from the `wri-cities-indicators` bucket in s3.
-- `AlbedoCloudMasked__ZonalStats_median__NumSeasons_3` (dates specified in filename), read from the `wri-cities-indicators` bucket in s3.
-- `TreeCanopyHeight` (height threshold >= 3 meters), read from the `wri-cities-indicators` bucket in s3.
+- `UrbanExtents`
+- `WorldPop`
+- `OpenUrban`
+- `AlbedoCloudMasked__ZonalStats_median__NumSeasons_3` (dates specified in filename)
+- `TreeCanopyHeight` (height threshold >= 3 meters)
 
 > ⚠ If OpenUrban was just generated, you must publish it to CIF (via publish_layers.py in the [cities-cif-portal](https://github.com/wri/cities-cif-portal/tree/main) repository) before generating opportunity layers.
 
