@@ -172,8 +172,12 @@ def get_data(city, output_base=".", batch_size=5, layers=None, copy_to_s3=True):
         layers = ["all"]
     layers = set(layers)
     run_all = "all" in layers
+    grid_only_layers = {"city_grid", "grid", "boundaries", "boundary"}
 
     city_grid = _prepare_city(city, data_path=data_path, copy_to_s3=copy_to_s3)
+
+    if layers and layers.issubset(grid_only_layers):
+        return city_grid
 
     if layers == {"buildings"}:
         _buildings_only(city, data_path=data_path, city_grid=city_grid, copy_to_s3=copy_to_s3)
@@ -340,7 +344,7 @@ def _parse_args():
     parser.add_argument(
         "--layers",
         default="all",
-        help="Comma-separated layers to fetch. Use 'buildings' for buildings only. Default: all.",
+        help="Comma-separated layers to fetch. Use 'city_grid' for the city boundary and grid only. Default: all.",
     )
     parser.add_argument(
         "--skip-s3-upload",

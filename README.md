@@ -142,6 +142,12 @@ Download only roads for one city:
 python get_data.py USA-Boston --layers roads --skip-s3-upload
 ```
 
+Create only the saved city boundary and city grid for one city:
+
+```bash
+python get_data.py USA-Boston --layers city_grid --skip-s3-upload
+```
+
 ---
 
 ## 🌳 Generate Opportunity Layers
