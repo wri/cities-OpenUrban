@@ -13,9 +13,10 @@ This repository supports:
 
 OpenUrban is a high-resolution (1 m) LULC dataset with categories designed to be specifically relevant to the implementation of heat-resilient infrastructure, validated at 93 percent accuracy in the United States and 83 percent globally (16 cities across eight world regions and a range of city sizes). We chose these LULC categories to map the types of features (roads, parking lots, buildings, water, and public open spaces) that are modifiable for the purposes of heat mitigation. Additionally, we include three generic categories (green space (other), built-up (other), and barren) to fill the gaps between features of interest and ensure continuous coverage over urban areas. We use only free and globally available data—the spatial extent of the datasets covers all land areas worldwide—so that our methods can be implemented for any city, regardless of local data availability. Where available, OpenUrban could be supplemented with higher-resolution or locally sourced data to potentially improve accuracy. The OpenUrban dataset is continually expanding as we add coverage of more cities. These data serve as the foundation for generating scenarios, providing the spatial detail needed to identify where different forms of heat-resilient infrastructure can realistically be implemented. 
 
-Excerpt from (**Mapping Scenarios and Estimating the Potential for Heat-Resilient Infrastructure in Cities**[https://www.wri.org/research/mapping-scenarios-and-estimating-potential-heat-resilient-infrastructure-cities], Wesley et al. 2026)
+Excerpt from [**Mapping Scenarios and Estimating the Potential for Heat-Resilient Infrastructure in Cities**](https://www.wri.org/research/mapping-scenarios-and-estimating-potential-heat-resilient-infrastructure-cities), Wesley et al. 2026)
 
 Data can be explored further at: [https://wri-datalab.earthengine.app/view/open-urban].
+
 Public Earth Engine asset at: [https://code.earthengine.google.com/?asset=projects/wri-datalab/cities/OpenUrban/OpenUrban_LULC] 
 
 | Category | Subcategory | Sub-subcategory | Code |
