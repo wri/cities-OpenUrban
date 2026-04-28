@@ -9,6 +9,34 @@ This repository supports:
 - Generation of tree and cool roof opportunity layers
 - Batch processing of multiple cities via CLI
 
+# About
+
+OpenUrban is a high-resolution (1 m) LULC dataset with categories designed to be specifically relevant to the implementation of heat-resilient infrastructure (Table 2), validated at 93 percent accuracy in the United States and 83 percent globally (16 cities across eight world regions and a range of city sizes). We chose these LULC categories to map the types of features (roads, parking lots, buildings, water, and public open spaces) that are modifiable for the purposes of heat mitigation. Additionally, we include three generic categories (green space [other], built-up [other], and barren) to fill the gaps between features of interest and ensure continuous coverage over urban areas. We use only free and globally available data—the spatial extent of the datasets covers all land areas worldwide—so that our methods can be implemented for any city, regardless of local data availability. Where available, OpenUrban could be supplemented with higher-resolution or locally sourced data to potentially improve accuracy. The OpenUrban dataset is continually expanding as we add coverage of more cities. These data serve as the foundation for generating scenarios, providing the spatial detail needed to identify where different forms of heat-resilient infrastructure can realistically be implemented. 
+
+Excerpt from (Mapping Scenarios and Estimating the Potential for Heat-Resilient Infrastructure in Cities, Wesley et al. 2026)[https://www.wri.org/research/mapping-scenarios-and-estimating-potential-heat-resilient-infrastructure-cities]
+
+Data can be explored further at: [https://wri-datalab.earthengine.app/view/open-urban].
+Public Earth Engine asset at: [https://code.earthengine.google.com/?asset=projects/wri-datalab/cities/OpenUrban/OpenUrban_LULC] 
+
+| Category | Subcategory | Sub-subcategory | Code |
+|---|---|---|---|
+| Green space (other) | | | 110 |
+| Built up (other) | | | 120 |
+| Barren | | | 130 |
+| Public open space | | | 200 |
+| Water | | | 300 |
+| Parking | | | 400 |
+| Roads | | | 500 |
+| Building | Unclassified | | 600 |
+| | | Low-slope | 601 |
+| | | High-slope | 602 |
+| | Residential | | 610 |
+| | | Low-slope | 611 |
+| | | High-slope | 612 |
+| | Non-residential | | 620 |
+| | | Low-slope | 621 |
+| | | High-slope | 622 |
+
 ---
 
 # 📁 Repository Structure
