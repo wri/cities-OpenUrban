@@ -197,6 +197,7 @@ def main(
     city_name,
     gridcell_id,
     version,
+    ovt_release_version,
     local_file,
     s3_bucket,
     s3_key,
@@ -233,6 +234,7 @@ def main(
         "city": str(city_name),
         "grid_cell": int(gridcell_id) if str(gridcell_id).isdigit() else str(gridcell_id),
         "version": str(version),
+        "overture_release_version": str(ovt_release_version),
         "start_time": time.strftime("%Y-%m-%d"),
     }
 

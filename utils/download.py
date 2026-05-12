@@ -5,6 +5,8 @@ import geopandas as gpd
 import rasterio
 from enum import Enum
 import glob
+import urllib.request
+import json
 
 from city_metrix.layers import (
     OpenStreetMap, 
@@ -266,6 +268,15 @@ def get_parking(city, bbox, grid_cell_id, data_path, copy_to_s3=False, compressi
     parking.to_parquet(parking_file, index=False, compression=compression)
     if copy_to_s3:
         to_s3(parking_file, data_path)
+        
+def get_latest_overture_version():
+    url = "https://stac.overturemaps.org/catalog.json"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req) as response:
+        catalog = json.loads(response.read())
+    # Links are sorted by release date; get the latest
+    release_links = [l["href"] for l in catalog["links"] if l["rel"] == "child"]
+    return release_links[0].split("/")[1] 
 
 def get_buildings(city, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False, compression="snappy"):
     """Fetch Overture buildings → GeoParquet."""
@@ -284,6 +295,7 @@ def get_buildings(city, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False, c
         if gdf is None or len(gdf) == 0:
             print(f"No buildings found for grid cell {grid_cell_id}")
             gdf = gpd.GeoDataFrame(columns=["id","geometry"], geometry="geometry", crs="EPSG:4326")
+            gdf = gdf["release_version"] = get_latest_overture_version()
 
         # Ensure an id column exists
         if "id" not in gdf.columns:
@@ -292,6 +304,7 @@ def get_buildings(city, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False, c
             else:
                 gdf = gdf.reset_index().rename(columns={"index": "id"})
         gdf["id"] = gdf["id"].astype(str)
+        gdf = gdf["release_version"] = get_latest_overture_version()
 
         gdf.to_parquet(buildings_file, index=False, compression=compression)
         print(f"Wrote {len(gdf)} features → {buildings_file}")

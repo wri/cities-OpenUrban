@@ -180,7 +180,10 @@ create_lulc_tile <- function(
     glue("{city_path}/buildings/buildings_{gridcell_id}.parquet"),
     quiet = TRUE
   ) %>%
-    select(id)
+    select(id, release_version)
+  
+  ovt_release_version <- unique(buildings$release_version)
+    
   
   ulu <- rast(glue("{city_path}/urban_land_use/urban_land_use_{gridcell_id}.tif"))
   
@@ -394,6 +397,7 @@ create_lulc_tile <- function(
       "--city-name", city,
       "--gridcell-id", gridcell_id,
       "--version", version,
+      "--overture_release_version", ovt_release_version,
       "--overwrite"
     )
     
