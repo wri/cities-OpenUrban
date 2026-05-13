@@ -155,6 +155,25 @@ Notes:
 - If processing fails for a city, execution continues to the next
 - If you already have the data downloaded and just need to generate the tiles, use the flag `--openurban[g]`
 
+### Custom Boundary
+
+By default, OpenUrban fetches the city boundary from the WRI urban extents dataset on S3. To use a custom boundary instead, pass a URL to a GeoJSON file via `--boundary`:
+
+```bash
+Rscript 1--OpenUrban-workflow.R \
+  --city CHN-Chengdu \
+  --openurban \
+  --boundary https://wri-cities-tcm.s3.us-east-1.amazonaws.com/city_projects/CHN-Chengdu/urban-analysis-area/data/CHN-Chengdu-urban-analysis-area.geojson
+```
+
+Notes:
+
+- The URL must point to a valid GeoJSON file readable by GeoPandas
+- If a `city_polygon.geojson` already exists locally at `data/{city}/boundaries/`, the `--boundary` flag is ignored and the cached file is used
+- To force a fresh fetch with a custom boundary, delete `data/{city}/boundaries/city_polygon.geojson` first
+
+---
+
 ### Download Only Selected Raw Layers
 
 Use `get_data.py` when you want to fetch a subset of source data instead of running the full OpenUrban workflow.
