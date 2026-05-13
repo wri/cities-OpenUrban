@@ -296,7 +296,7 @@ def get_buildings(city, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False, c
         if gdf is None or len(gdf) == 0:
             print(f"No buildings found for grid cell {grid_cell_id}")
             gdf = gpd.GeoDataFrame(columns=["id","geometry"], geometry="geometry", crs="EPSG:4326")
-            gdf = gdf["release_version"] = get_latest_overture_version()
+            gdf["release_version"] = get_latest_overture_version()
 
         # Ensure an id column exists
         if "id" not in gdf.columns:
@@ -305,7 +305,7 @@ def get_buildings(city, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False, c
             else:
                 gdf = gdf.reset_index().rename(columns={"index": "id"})
         gdf["id"] = gdf["id"].astype(str)
-        gdf = gdf["release_version"] = get_latest_overture_version()
+        gdf["release_version"] = get_latest_overture_version()
 
         gdf.to_parquet(buildings_file, index=False, compression=compression)
         print(f"Wrote {len(gdf)} features → {buildings_file}")
