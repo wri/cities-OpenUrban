@@ -20,7 +20,7 @@ def create_grid_for_city(
     Generates a grid of polygons covering a city's (buffered) geometry.
 
     - Uses city centroid + get_utm_zone_from_latlon_point() for CRS
-    - Buffers city boundary by 0.5 mile (804.672 m) in UTM
+    - Buffers city boundary by 1500 m in UTM
     - Builds grid in meters (UTM, 15 km tiles)
     - Writes GeoJSON in EPSG:4326 (portable)
     """
