@@ -78,6 +78,8 @@ option_list <- list(
               help = "Run OpenUrban default mode (equivalent to --openurban[dg]). Also supported: --openurban[d], --openurban[g], --openurban[dg]"),
   make_option(c("--opportunity"), type = "character", default = NULL,
               help = "Comma-separated opportunity layers: trees__all-trees,cool-roofs__all-roofs"),
+  make_option(c("--boundary"), type = "character", default = NULL,
+              help = "URL to a custom boundary GeoJSON (overrides the default urban-extent fetch). e.g. 'https://.../.../boundary.geojson'"),
   make_option(c("--fail-fast"), action = "store_true", default = FALSE,
               help = "Stop immediately if any city fails (default: keep going)")
 )
@@ -105,8 +107,11 @@ if (!openurban_requested && length(opp_keys) == 0) {
   stop("\nNothing to do: specify --openurban and/or --opportunity ...", call. = FALSE)
 }
 
+boundary_url <- if (is.null(opt$boundary) || !nzchar(opt$boundary)) NULL else opt$boundary
+
 message("Cities: ", paste(cities, collapse = ", "))
 # message("Add urban extent: ", opts$add_urban_extent)
+message("Custom boundary: ", if (is.null(boundary_url)) "(none)" else boundary_url)
 message("Run OpenUrban: ", openurban_requested)
 if (openurban_requested) {
   message("OpenUrban mode: ", openurban_mode,
@@ -137,7 +142,8 @@ for (city in cities) {
       generate_openurban_city(
         city = city,
         download_data = openurban_download,
-        generate_tiles = openurban_generate
+        generate_tiles = openurban_generate,
+        boundary_url = boundary_url
       )
       message("==> OpenUrban step complete.")
     }

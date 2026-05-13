@@ -105,8 +105,8 @@ def _malloc_trim():
         pass
 
 
-def _prepare_city(city, data_path, copy_to_s3):
-    city_polygon = get_city_polygon(city, data_path=data_path, copy_to_s3=copy_to_s3)
+def _prepare_city(city, data_path, copy_to_s3, boundary_url=None):
+    city_polygon = get_city_polygon(city, data_path=data_path, copy_to_s3=copy_to_s3, boundary_url=boundary_url)
 
     print("creating city grid")
     city_grid = create_grid_for_city(city, city_polygon, data_path=data_path, copy_to_s3=copy_to_s3)
@@ -164,7 +164,7 @@ def _buildings_only(city, data_path, city_grid, copy_to_s3):
     merge_building_tiles(city, data_path=data_path, copy_to_s3=copy_to_s3)
 
 
-def get_data(city, output_base=".", batch_size=5, layers=None, copy_to_s3=True):
+def get_data(city, output_base=".", batch_size=5, layers=None, copy_to_s3=True, boundary_url=None):
 
     data_path = os.path.join(output_base, "data")
 
@@ -173,7 +173,7 @@ def get_data(city, output_base=".", batch_size=5, layers=None, copy_to_s3=True):
     layers = set(layers)
     run_all = "all" in layers
 
-    city_grid = _prepare_city(city, data_path=data_path, copy_to_s3=copy_to_s3)
+    city_grid = _prepare_city(city, data_path=data_path, copy_to_s3=copy_to_s3, boundary_url=boundary_url)
 
     if layers == {"buildings"}:
         _buildings_only(city, data_path=data_path, city_grid=city_grid, copy_to_s3=copy_to_s3)
@@ -343,6 +343,11 @@ def _parse_args():
         help="Comma-separated layers to fetch. Use 'buildings' for buildings only. Default: all.",
     )
     parser.add_argument(
+        "--boundary",
+        default=None,
+        help="URL to a custom boundary GeoJSON. Overrides the default urban-extent fetch.",
+    )
+    parser.add_argument(
         "--skip-s3-upload",
         action="store_true",
         help="Skip uploading generated files to S3.",
@@ -359,6 +364,7 @@ def main():
         batch_size=args.batch_size,
         layers=layers,
         copy_to_s3=not args.skip_s3_upload,
+        boundary_url=args.boundary,
     )
 
 

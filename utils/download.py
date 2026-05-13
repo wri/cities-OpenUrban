@@ -112,20 +112,23 @@ def keep_only(gdf, allowed=("LineString", "MultiLineString"),
 
 
 
-def get_city_polygon(city, data_path, copy_to_s3=False, crs='EPSG:4326'):
+def get_city_polygon(city, data_path, copy_to_s3=False, crs='EPSG:4326', boundary_url=None):
     """
-    Fetches the city polygon from a remote URL and saves it to a local GeoJSON file.
-    
+    Fetches the city polygon and saves it to a local GeoJSON file.
+
+    If boundary_url is provided it is fetched directly, bypassing the default
+    urban-extent S3 lookup. Otherwise falls back to the WRI urban-extent URL.
+
     Args:
         city (str): The name of the city to fetch.
         data_path (str): The path to save the city polygon data.
         copy_to_s3 (bool): Whether to copy the file to S3 after saving locally.
         crs (str): The coordinate reference system to use for the polygon.
-    
+        boundary_url (str | None): Optional URL to a custom boundary GeoJSON.
+
     Returns:
         geopandas.GeoDataFrame: The city polygon as a GeoDataFrame.
     """
-    # Check if file already exists
     boundaries_path = f'{data_path}/{city}/boundaries'
     boundaries_file = f'{boundaries_path}/city_polygon.geojson'
 
@@ -133,21 +136,19 @@ def get_city_polygon(city, data_path, copy_to_s3=False, crs='EPSG:4326'):
         print(f"City polygon already exists at {boundaries_file}, skipping fetch.")
         city_gdf = gpd.read_file(boundaries_file).to_crs(crs)
     else:
-        print(f"Fetching city polygon for {city}...")
-        # Create boundaries folder if it doesn't exist
         if not os.path.exists(boundaries_path):
             os.makedirs(boundaries_path)
 
-        city_polygon_url = f'https://wri-cities-indicators.s3.us-east-1.amazonaws.com/data/published/layers/UrbanExtents/geojson/{city}__urban_extent__UrbanExtents__StartYear_2020_EndYear_2020.geojson'
-        city_gdf = gpd.read_file(city_polygon_url).to_crs(crs)
-
-        # Keep just the top level city polygon
-        # city_polygon = city_gdf[city_gdf['geo_name'] == city_gdf['geo_parent_name']]
+        fetch_url = boundary_url if boundary_url else (
+            f'https://wri-cities-indicators.s3.us-east-1.amazonaws.com/data/published/layers/UrbanExtents/geojson/'
+            f'{city}__urban_extent__UrbanExtents__StartYear_2020_EndYear_2020.geojson'
+        )
+        print(f"Fetching city polygon for {city} from {fetch_url}...")
+        city_gdf = gpd.read_file(fetch_url).to_crs(crs)
 
         # Keep just the geometry column
         city_gdf = city_gdf[['geometry']]
 
-        # Save to a GeoJSON file
         city_gdf.to_file(boundaries_file, driver='GeoJSON')
 
         if copy_to_s3:

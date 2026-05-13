@@ -425,17 +425,20 @@ create_lulc_tile <- function(
 # City wrapper ####
 # ============================================================
 
-generate_openurban_city <- function(city, download_data = TRUE, generate_tiles = TRUE) {
-  
+generate_openurban_city <- function(city, download_data = TRUE, generate_tiles = TRUE, boundary_url = NULL) {
+
   city_path <- here("data", city)
   dir.create(city_path, recursive = TRUE, showWarnings = FALSE)
-  
+
   if (isTRUE(download_data)) {
     args <- c(
       "run","--no-capture-output",
       "-n","open-urban",
       py,"-u","get_data.py", city
     )
+    if (!is.null(boundary_url) && nzchar(boundary_url)) {
+      args <- c(args, "--boundary", boundary_url)
+    }
     run_python_live(args, wd = here())
   } else {
     message("Skipping data download (--openurban mode without d).")
