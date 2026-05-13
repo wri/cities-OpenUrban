@@ -191,6 +191,11 @@ def start_ee_upload(
     show_default=True,
     help="Delete the staged GCS blob after the EE upload command completes (recommended when using --wait).",
 )
+@click.option(
+    "--overture-release-version",
+    default=None,
+    help="Overture Maps release version (e.g. 2025-05-21.0)",
+)
 def main(
     gcs_bucket,
     gcs_blob_name,
