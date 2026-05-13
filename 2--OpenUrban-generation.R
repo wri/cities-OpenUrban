@@ -397,7 +397,7 @@ create_lulc_tile <- function(
       "--city-name", city,
       "--gridcell-id", gridcell_id,
       "--version", version,
-      "--overture_release_version", ovt_release_version,
+      "--overture-release-version", ovt_release_version,
       "--overwrite"
     )
     
