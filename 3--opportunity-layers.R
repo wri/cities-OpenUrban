@@ -280,6 +280,7 @@ run_city_opportunity <- function(
     # Inputs: CIF layer names/patterns
     urban_extent_path = NULL,  # if NULL, uses standard CIF path for 2020 extents
     worldpop_path     = NULL,
+    worldpop_version  = 2,
     lulc_path         = NULL,
     albedo_path       = NULL,
     treeheight_path   = NULL,
@@ -378,10 +379,17 @@ run_city_opportunity <- function(
       vect()
   }
   if (is.null(worldpop_path)) {
-    worldpop_path <- glue(
-      "{cif_aws_http}/{cif_prefix}/WorldPop/tif/",
-      "{city}__urban_extent__WorldPop__StartYear_2020_EndYear_2020.tif"
-    )
+    if (worldpop_version == 2) {
+      worldpop_path <- glue(
+        "{cif_aws_http}/{cif_prefix}/WorldPop/tif/",
+        "{city}__urban_extent__WorldPop__Version_2__StartYear_2020_EndYear_2020.tif"
+      )
+    } else {
+      worldpop_path <- glue(
+        "{cif_aws_http}/{cif_prefix}/WorldPop/tif/",
+        "{city}__urban_extent__WorldPop__StartYear_2020_EndYear_2020.tif"
+      )
+    }
   }
   if (is.null(lulc_path)) {
     lulc_grid <- st_read(glue(

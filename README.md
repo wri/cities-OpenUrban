@@ -186,6 +186,9 @@ Currently, the opportunity layers can **only** be generated for an urban extent.
 - `TreeCanopyHeight` (height threshold >= 3 meters)
 
 > ⚠ If OpenUrban was just generated, you must publish it to CIF (via publish_layers.py in the [cities-cif-portal](https://github.com/wri/cities-cif-portal/tree/main) repository) before generating opportunity layers.
+> As of June 15, 2026 we are using WorldPop version 2. If only WorldPop version 1 exists in 
+s3 you can use those files to provide the grid (it is the same via our CIF implementation). The default is
+to look for version 2 and need not be specified.
 
 ---
 
@@ -220,6 +223,15 @@ In rare cases it may be necessary to generate a single opportunity layer for a c
 Rscript 1--OpenUrban-workflow.R \
   --city USA-Atlanta \
   --opportunity trees__all-plantable,cool-roofs__all-roofs
+```
+
+### Specify WorldPop version 1
+
+```bash
+Rscript 1--OpenUrban-workflow.R \
+  --city USA-Atlanta \
+  --opportunity all
+  --worldpop-version 1
 ```
 
 ---
