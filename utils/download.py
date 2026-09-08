@@ -55,16 +55,20 @@ def _retry(fn, what, tries=_MAX_RETRIES, base=_RETRY_BASE_S, cap=_RETRY_CAP_S,
 # Overpass endpoint(s)
 # ---------------------------------------------------------------------------
 # osmnx (used by city_metrix's OpenStreetMap layer) talks to a single Overpass
-# endpoint at a time. By default we just use the main instance and lean on the
-# retry/backoff loop to ride out a transient blip. If you want automatic
-# failover to other mirrors, set OPENURBAN_OVERPASS_MIRRORS to a comma-separated
-# list (first tried first, each ending in "/api"), e.g.
-#   OPENURBAN_OVERPASS_MIRRORS="https://overpass-api.de/api,https://overpass.kumi.systems/api"
+# endpoint at a time. Each retry attempt rotates to the next endpoint in this
+# list, so if overpass-api.de is having a moment the fetch fails over to the
+# other well-established public instances (and cycles back). Override the list /
+# order for a given run with OPENURBAN_OVERPASS_MIRRORS (comma-separated, first
+# tried first, each ending in "/api").
 _OVERPASS_MIRRORS = [
     m.strip().rstrip("/")
     for m in os.environ.get(
         "OPENURBAN_OVERPASS_MIRRORS",
-        "https://overpass-api.de/api",
+        ",".join([
+            "https://overpass-api.de/api",       # primary
+            "https://overpass.kumi.systems/api", # fallback
+            "https://overpass.osm.ch/api",       # fallback (Swiss OSM chapter)
+        ]),
     ).split(",")
     if m.strip()
 ]
