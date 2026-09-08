@@ -1,5 +1,6 @@
 import os
 import argparse
+import traceback
 import numpy as np
 
 from city_metrix.metrix_model import GeoExtent
@@ -14,6 +15,40 @@ import geopandas as gpd
 import pandas as pd
 
 from shapely.geometry import box
+
+
+# ---------------------------------------------------------------------------
+# Failure isolation
+# ---------------------------------------------------------------------------
+# One flaky remote source (OSM/Overpass, GEE, Overture, ...) must not abort the
+# whole run. Every stage and every per-tile task is funnelled through
+# _safe_call, which logs and records the failure but lets the rest proceed.
+# get_data() prints a summary at the end and exits non-zero if anything failed.
+_FAILURES = []
+
+
+def _safe_call(fn, label, *args, **kwargs):
+    """Run ``fn(*args, **kwargs)``; on failure log it and return a marker tuple.
+
+    Returns ``None`` on success, or ``("FAIL", label, "<ExcType>: <msg>")``.
+    Safe to send to dask workers (module-level, cloudpickle-able).
+    """
+    try:
+        fn(*args, **kwargs)
+        return None
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except BaseException as e:  # noqa: BLE001 - isolate everything remote/IO
+        print(f"!! FAILED {label}: {type(e).__name__}: {e}", flush=True)
+        traceback.print_exc()
+        return ("FAIL", label, f"{type(e).__name__}: {e}")
+
+
+def _run_stage(fn, label, *args, **kwargs):
+    """_safe_call for the main process; records into the module failure list."""
+    result = _safe_call(fn, label, *args, **kwargs)
+    if result is not None:
+        _FAILURES.append(result)
 
 
 def make_vector_tiles_from_all(
@@ -150,18 +185,23 @@ def _buildings_only(city, data_path, city_grid, copy_to_s3):
         print("=" * 60)
 
         building_tasks = [
-            delayed(get_buildings)(city, bbox_fetch, gid, data_path=data_path, copy_to_s3=copy_to_s3)
+            delayed(_safe_call)(
+                get_buildings, f"buildings/{gid}",
+                city, bbox_fetch, gid, data_path=data_path, copy_to_s3=copy_to_s3,
+            )
             for gid, bbox_fetch in per_cell
         ]
 
         print(f"Running BUILDINGS tasks: {len(building_tasks)}")
-        dask.compute(*building_tasks)
+        results = dask.compute(*building_tasks)
+        _FAILURES.extend(r for r in results if r is not None)
         print("BUILDINGS tasks complete.")
     finally:
         client.close()
         cluster.close()
 
-    merge_building_tiles(city, data_path=data_path, copy_to_s3=copy_to_s3)
+    _run_stage(merge_building_tiles, "merge_building_tiles",
+               city, data_path=data_path, copy_to_s3=copy_to_s3)
 
 
 def get_data(city, output_base=".", batch_size=5, layers=None, copy_to_s3=True):
@@ -173,10 +213,13 @@ def get_data(city, output_base=".", batch_size=5, layers=None, copy_to_s3=True):
     layers = set(layers)
     run_all = "all" in layers
 
+    _FAILURES.clear()
+
     city_grid = _prepare_city(city, data_path=data_path, copy_to_s3=copy_to_s3)
 
     if layers == {"buildings"}:
         _buildings_only(city, data_path=data_path, city_grid=city_grid, copy_to_s3=copy_to_s3)
+        _report_and_exit(city)
         return
 
     minx, miny, maxx, maxy = city_grid.total_bounds
@@ -184,22 +227,27 @@ def get_data(city, output_base=".", batch_size=5, layers=None, copy_to_s3=True):
 
     if run_all or "roads" in layers:
         print("getting roads from OSM")
-        get_roads(city, bbox, grid_cell_id="all", data_path=data_path, copy_to_s3=copy_to_s3)
+        _run_stage(get_roads, "roads",
+                   city, bbox, grid_cell_id="all", data_path=data_path, copy_to_s3=copy_to_s3)
 
     if run_all or "open_space" in layers:
         print("getting open space from OSM")
-        get_open_space(city, bbox, grid_cell_id="all", data_path=data_path, copy_to_s3=copy_to_s3)
+        _run_stage(get_open_space, "open_space",
+                   city, bbox, grid_cell_id="all", data_path=data_path, copy_to_s3=copy_to_s3)
 
     if run_all or "water" in layers:
         print("getting water from OSM")
-        get_water(city, bbox, grid_cell_id="all", data_path=data_path, copy_to_s3=copy_to_s3)
+        _run_stage(get_water, "water",
+                   city, bbox, grid_cell_id="all", data_path=data_path, copy_to_s3=copy_to_s3)
 
     if run_all or "parking" in layers:
         print("getting parking from OSM")
-        get_parking(city, bbox, grid_cell_id="all", data_path=data_path, copy_to_s3=copy_to_s3)
+        _run_stage(get_parking, "parking",
+                   city, bbox, grid_cell_id="all", data_path=data_path, copy_to_s3=copy_to_s3)
 
     if run_all or "roads" in layers:
-        summarize_average_lanes(city, data_path=data_path, copy_to_s3=copy_to_s3)
+        _run_stage(summarize_average_lanes, "summarize_average_lanes",
+                   city, data_path=data_path, copy_to_s3=copy_to_s3)
 
     # Start a dask client
     from dask.distributed import Client, LocalCluster
@@ -242,13 +290,17 @@ def get_data(city, output_base=".", batch_size=5, layers=None, copy_to_s3=True):
         light_tasks = []
         for gid, bbox_fetch in per_cell:
             light_tasks.extend([
-                delayed(get_buildings)(city, bbox_fetch, gid, data_path=data_path, copy_to_s3=copy_to_s3),
-                delayed(get_urban_land_use)(city, bbox_fetch, gid, data_path=data_path, copy_to_s3=False),
-                delayed(get_anbh)(city, bbox_fetch, grid_cell_id=gid, data_path=data_path, copy_to_s3=False),
+                delayed(_safe_call)(get_buildings, f"buildings/{gid}",
+                                    city, bbox_fetch, gid, data_path=data_path, copy_to_s3=copy_to_s3),
+                delayed(_safe_call)(get_urban_land_use, f"urban_land_use/{gid}",
+                                    city, bbox_fetch, gid, data_path=data_path, copy_to_s3=False),
+                delayed(_safe_call)(get_anbh, f"anbh/{gid}",
+                                    city, bbox_fetch, grid_cell_id=gid, data_path=data_path, copy_to_s3=False),
             ])
 
         print(f"Running LIGHT tasks: {len(light_tasks)}")
-        dask.compute(*light_tasks)
+        results = dask.compute(*light_tasks)
+        _FAILURES.extend(r for r in results if r is not None)
         print("LIGHT tasks complete.")
         print("-" * 60)
         
@@ -285,15 +337,17 @@ def get_data(city, output_base=".", batch_size=5, layers=None, copy_to_s3=True):
     
             futures = [
                 esa_client.submit(
-                    get_esa, city, bbox_fetch,
+                    _safe_call, get_esa, f"esa/{gid}", city, bbox_fetch,
                     grid_cell_id=gid, data_path=data_path, copy_to_s3=False
                 )
                 for gid, bbox_fetch in chunk
             ]
-    
+
             wait(futures)
             for f in futures:
-                f.result()  # raise if failed
+                r = f.result()
+                if r is not None:
+                    _FAILURES.append(r)
     
             completed += len(chunk)  # <-- FIX: do this before deleting futures
     
@@ -310,16 +364,39 @@ def get_data(city, output_base=".", batch_size=5, layers=None, copy_to_s3=True):
 
     # Create per-tile vector files from all-files
     if run_all or "roads" in layers:
-        make_vector_tiles_from_all(city, data_path, "roads", city_grid)
+        _run_stage(make_vector_tiles_from_all, "tile roads",
+                   city, data_path, "roads", city_grid)
     if run_all or "open_space" in layers:
-        make_vector_tiles_from_all(city, data_path, "open_space", city_grid)
+        _run_stage(make_vector_tiles_from_all, "tile open_space",
+                   city, data_path, "open_space", city_grid)
     if run_all or "water" in layers:
-        make_vector_tiles_from_all(city, data_path, "water", city_grid)
+        _run_stage(make_vector_tiles_from_all, "tile water",
+                   city, data_path, "water", city_grid)
     if run_all or "parking" in layers:
-        make_vector_tiles_from_all(city, data_path, "parking", city_grid)
+        _run_stage(make_vector_tiles_from_all, "tile parking",
+                   city, data_path, "parking", city_grid)
 
     if run_all or "buildings" in layers:
-        merge_building_tiles(city, data_path=data_path, copy_to_s3=copy_to_s3)
+        _run_stage(merge_building_tiles, "merge_building_tiles",
+                   city, data_path=data_path, copy_to_s3=copy_to_s3)
+
+    _report_and_exit(city)
+
+
+def _report_and_exit(city):
+    """Print a summary of any recorded failures and exit non-zero if there were any."""
+    print("\n" + "=" * 60)
+    if not _FAILURES:
+        print(f"ALL DATA STAGES OK for {city}")
+        print("=" * 60, flush=True)
+        return
+
+    print(f"DATA DOWNLOAD FINISHED WITH {len(_FAILURES)} FAILURE(S) for {city}:")
+    for _, label, err in _FAILURES:
+        print(f"  - {label}: {err}")
+    print("Re-run the same command to retry only the missing files.")
+    print("=" * 60, flush=True)
+    raise SystemExit(1)
 
 
 def _parse_args():
