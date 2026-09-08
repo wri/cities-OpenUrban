@@ -128,10 +128,12 @@ def _output_ready(path, min_bytes=1):
 def _write_raster_atomic(darr, path):
     """Write an (rio)xarray raster to ``path`` via a temp file + atomic rename.
 
-    A crash mid-write leaves only ``path.tmp`` behind, so ``_output_ready`` will
-    not mistake a half-written file for a finished one.
+    A crash mid-write leaves only the temp file behind, so ``_output_ready``
+    will not mistake a half-written file for a finished one. The temp file keeps
+    the real extension (``esa_1.tmp.tif``) so GDAL can still detect the driver.
     """
-    tmp = f"{path}.tmp"
+    root, ext = os.path.splitext(path)
+    tmp = f"{root}.tmp{ext or '.tif'}"
     try:
         darr.rio.to_raster(raster_path=tmp)
         os.replace(tmp, path)
