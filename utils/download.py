@@ -18,8 +18,12 @@ _RETRY_BASE_S = float(os.environ.get("OPENURBAN_RETRY_BASE_S", "5"))
 _RETRY_CAP_S  = float(os.environ.get("OPENURBAN_RETRY_CAP_S", "180"))
 
 
-def _retry(fn, what, tries=_MAX_RETRIES, base=_RETRY_BASE_S, cap=_RETRY_CAP_S):
+def _retry(fn, what, tries=_MAX_RETRIES, base=_RETRY_BASE_S, cap=_RETRY_CAP_S,
+           before_attempt=None):
     """Call ``fn()`` and retry on any exception with exponential backoff + jitter.
+
+    ``before_attempt(attempt)`` (1-based) runs just before each try -- used to
+    rotate to a different server between attempts.
 
     Re-raises the last exception (wrapped) once all attempts are exhausted so the
     caller can decide whether to skip this item and carry on.
@@ -27,6 +31,8 @@ def _retry(fn, what, tries=_MAX_RETRIES, base=_RETRY_BASE_S, cap=_RETRY_CAP_S):
     last = None
     for attempt in range(1, tries + 1):
         try:
+            if before_attempt is not None:
+                before_attempt(attempt)
             return fn()
         except KeyboardInterrupt:
             raise
@@ -43,6 +49,54 @@ def _retry(fn, what, tries=_MAX_RETRIES, base=_RETRY_BASE_S, cap=_RETRY_CAP_S):
             )
             time.sleep(delay)
     raise RuntimeError(f"{what}: giving up after {tries} attempts") from last
+
+
+# ---------------------------------------------------------------------------
+# Overpass mirror rotation
+# ---------------------------------------------------------------------------
+# osmnx (used by city_metrix's OpenStreetMap layer) talks to a single Overpass
+# endpoint at a time. When the default host is down/refusing, cycling the
+# endpoint between retries is what actually gets the data. Override the list
+# with OPENURBAN_OVERPASS_MIRRORS (comma-separated, each ending in "/api").
+_OVERPASS_MIRRORS = [
+    m.strip().rstrip("/")
+    for m in os.environ.get(
+        "OPENURBAN_OVERPASS_MIRRORS",
+        ",".join([
+            "https://overpass-api.de/api",
+            "https://overpass.kumi.systems/api",
+            "https://overpass.private.coffee/api",
+            "https://overpass.osm.jp/api",
+        ]),
+    ).split(",")
+    if m.strip()
+]
+
+
+def _use_overpass_mirror(attempt):
+    """Point osmnx at the next Overpass mirror (round-robin by attempt number)."""
+    if not _OVERPASS_MIRRORS:
+        return
+    url = _OVERPASS_MIRRORS[(attempt - 1) % len(_OVERPASS_MIRRORS)]
+    try:
+        import osmnx as ox
+        # osmnx >= 2 uses settings.overpass_url; older uses overpass_endpoint
+        if hasattr(ox.settings, "overpass_url"):
+            ox.settings.overpass_url = url
+        else:
+            ox.settings.overpass_endpoint = url
+        print(f"  [overpass] attempt {attempt} using {url}", flush=True)
+    except Exception as e:
+        print(f"  [overpass] could not set mirror ({e}); using osmnx default", flush=True)
+
+
+def _osm_fetch(osm_class, bbox, what):
+    """Retry an OpenStreetMap layer fetch, rotating Overpass mirrors each attempt."""
+    return _retry(
+        lambda: OpenStreetMap(osm_class=osm_class).get_data(bbox),
+        what,
+        before_attempt=_use_overpass_mirror,
+    )
 
 
 def _output_ready(path, min_bytes=1):
@@ -232,10 +286,7 @@ def get_roads(city, bbox, grid_cell_id, data_path, copy_to_s3=False, compression
         return
 
     print(f"Fetching roads data for {city}...")
-    roads = _retry(
-        lambda: OpenStreetMap(osm_class=OpenStreetMapClass.ROAD).get_data(bbox),
-        f"OSM roads {city}/{grid_cell_id}",
-    )
+    roads = _osm_fetch(OpenStreetMapClass.ROAD, bbox, f"OSM roads {city}/{grid_cell_id}")
     roads = keep_only(roads, allowed=("LineString", "MultiLineString"))
 
     # ensure geometry column is set
@@ -281,9 +332,8 @@ def get_open_space(city, bbox, grid_cell_id, data_path, copy_to_s3=False, compre
         return
 
     print(f"Fetching open space data for {city}...")
-    open_space = _retry(
-        lambda: OpenStreetMap(osm_class=OpenStreetMapClass.OPEN_SPACE_HEAT).get_data(bbox),
-        f"OSM open_space {city}/{grid_cell_id}",
+    open_space = _osm_fetch(
+        OpenStreetMapClass.OPEN_SPACE_HEAT, bbox, f"OSM open_space {city}/{grid_cell_id}"
     )
     open_space = keep_only(open_space, allowed=("Polygon", "MultiPolygon"))
 
@@ -307,10 +357,7 @@ def get_water(city, bbox, grid_cell_id, data_path, copy_to_s3=False, compression
         return
 
     print(f"Fetching water data for {city}...")
-    water = _retry(
-        lambda: OpenStreetMap(osm_class=OpenStreetMapClass.WATER).get_data(bbox),
-        f"OSM water {city}/{grid_cell_id}",
-    )
+    water = _osm_fetch(OpenStreetMapClass.WATER, bbox, f"OSM water {city}/{grid_cell_id}")
     water = keep_only(water, allowed=("Polygon", "MultiPolygon"))
 
     if water is None or water.empty:
@@ -333,10 +380,7 @@ def get_parking(city, bbox, grid_cell_id, data_path, copy_to_s3=False, compressi
         return
 
     print(f"Fetching parking data for {city}...")
-    parking = _retry(
-        lambda: OpenStreetMap(osm_class=OpenStreetMapClass.PARKING).get_data(bbox),
-        f"OSM parking {city}/{grid_cell_id}",
-    )
+    parking = _osm_fetch(OpenStreetMapClass.PARKING, bbox, f"OSM parking {city}/{grid_cell_id}")
     parking = keep_only(parking, allowed=("Polygon", "MultiPolygon"))
 
     if parking is None or parking.empty:
