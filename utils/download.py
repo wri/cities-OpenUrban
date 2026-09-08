@@ -52,27 +52,19 @@ def _retry(fn, what, tries=_MAX_RETRIES, base=_RETRY_BASE_S, cap=_RETRY_CAP_S,
 
 
 # ---------------------------------------------------------------------------
-# Overpass mirror rotation
+# Overpass endpoint(s)
 # ---------------------------------------------------------------------------
 # osmnx (used by city_metrix's OpenStreetMap layer) talks to a single Overpass
-# endpoint at a time. When the default host is down/refusing, cycling the
-# endpoint between retries is what actually gets the data. Override the list
-# with OPENURBAN_OVERPASS_MIRRORS (comma-separated, each ending in "/api").
+# endpoint at a time. By default we just use the main instance and lean on the
+# retry/backoff loop to ride out a transient blip. If you want automatic
+# failover to other mirrors, set OPENURBAN_OVERPASS_MIRRORS to a comma-separated
+# list (first tried first, each ending in "/api"), e.g.
+#   OPENURBAN_OVERPASS_MIRRORS="https://overpass-api.de/api,https://overpass.kumi.systems/api"
 _OVERPASS_MIRRORS = [
     m.strip().rstrip("/")
     for m in os.environ.get(
         "OPENURBAN_OVERPASS_MIRRORS",
-        ",".join([
-            # Order matters: first entry is tried first. overpass-api.de is the
-            # long-standing primary; the rest are fallbacks for when it is
-            # briefly unreachable. osm.jp is intentionally omitted (expired TLS
-            # cert as of 2026-09). Override the whole list / order with
-            # OPENURBAN_OVERPASS_MIRRORS for a given run.
-            "https://overpass-api.de/api",
-            "https://overpass.private.coffee/api",
-            "https://overpass.kumi.systems/api",
-            "https://overpass.osm.ch/api",
-        ]),
+        "https://overpass-api.de/api",
     ).split(",")
     if m.strip()
 ]
