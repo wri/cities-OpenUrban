@@ -63,12 +63,13 @@ _OVERPASS_MIRRORS = [
     for m in os.environ.get(
         "OPENURBAN_OVERPASS_MIRRORS",
         ",".join([
-            # Order matters: first entry is tried first. overpass-api.de and
-            # kumi.systems are frequently unreachable from AWS egress; keep a
-            # known-good mirror at the front. osm.jp is intentionally omitted
-            # (expired TLS cert as of 2026-09).
-            "https://overpass.private.coffee/api",
+            # Order matters: first entry is tried first. overpass-api.de is the
+            # long-standing primary; the rest are fallbacks for when it is
+            # briefly unreachable. osm.jp is intentionally omitted (expired TLS
+            # cert as of 2026-09). Override the whole list / order with
+            # OPENURBAN_OVERPASS_MIRRORS for a given run.
             "https://overpass-api.de/api",
+            "https://overpass.private.coffee/api",
             "https://overpass.kumi.systems/api",
             "https://overpass.osm.ch/api",
         ]),
