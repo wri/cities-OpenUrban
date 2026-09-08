@@ -74,9 +74,11 @@ _OVERPASS_MIRRORS = [
 ]
 
 
-# Per-request timeout (seconds) so a queueing/slow mirror fails fast instead of
-# stalling the whole run. Override with OPENURBAN_OSM_TIMEOUT_S.
-_OSM_TIMEOUT_S = float(os.environ.get("OPENURBAN_OSM_TIMEOUT_S", "90"))
+# Per-request timeout (seconds). osmnx uses this both as the HTTP read timeout
+# and as the Overpass server-side budget "[timeout:<N>]" in the query. Default
+# matches osmnx's own default (180). Override with OPENURBAN_OSM_TIMEOUT_S.
+# MUST be an int: Overpass rejects a non-integer "[timeout:...]" with a 400.
+_OSM_TIMEOUT_S = int(float(os.environ.get("OPENURBAN_OSM_TIMEOUT_S", "180")))
 
 
 def _use_overpass_mirror(attempt):
@@ -96,7 +98,7 @@ def _use_overpass_mirror(attempt):
             ox.settings.requests_timeout = _OSM_TIMEOUT_S
         except Exception:
             pass
-        print(f"  [overpass] attempt {attempt} using {url} (timeout {_OSM_TIMEOUT_S:.0f}s)", flush=True)
+        print(f"  [overpass] attempt {attempt} using {url} (timeout {_OSM_TIMEOUT_S}s)", flush=True)
     except Exception as e:
         print(f"  [overpass] could not set mirror ({e}); using osmnx default", flush=True)
 
