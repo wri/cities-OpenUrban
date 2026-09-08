@@ -63,14 +63,23 @@ _OVERPASS_MIRRORS = [
     for m in os.environ.get(
         "OPENURBAN_OVERPASS_MIRRORS",
         ",".join([
+            # Order matters: first entry is tried first. overpass-api.de and
+            # kumi.systems are frequently unreachable from AWS egress; keep a
+            # known-good mirror at the front. osm.jp is intentionally omitted
+            # (expired TLS cert as of 2026-09).
+            "https://overpass.private.coffee/api",
             "https://overpass-api.de/api",
             "https://overpass.kumi.systems/api",
-            "https://overpass.private.coffee/api",
-            "https://overpass.osm.jp/api",
+            "https://overpass.osm.ch/api",
         ]),
     ).split(",")
     if m.strip()
 ]
+
+
+# Per-request timeout (seconds) so a queueing/slow mirror fails fast instead of
+# stalling the whole run. Override with OPENURBAN_OSM_TIMEOUT_S.
+_OSM_TIMEOUT_S = float(os.environ.get("OPENURBAN_OSM_TIMEOUT_S", "90"))
 
 
 def _use_overpass_mirror(attempt):
@@ -85,7 +94,12 @@ def _use_overpass_mirror(attempt):
             ox.settings.overpass_url = url
         else:
             ox.settings.overpass_endpoint = url
-        print(f"  [overpass] attempt {attempt} using {url}", flush=True)
+        # Don't let a slow/queueing mirror hang forever.
+        try:
+            ox.settings.requests_timeout = _OSM_TIMEOUT_S
+        except Exception:
+            pass
+        print(f"  [overpass] attempt {attempt} using {url} (timeout {_OSM_TIMEOUT_S:.0f}s)", flush=True)
     except Exception as e:
         print(f"  [overpass] could not set mirror ({e}); using osmnx default", flush=True)
 
