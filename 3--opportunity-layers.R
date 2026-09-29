@@ -588,6 +588,8 @@ run_city_opportunity <- function(
     }
     
     mean_stack <- rast(mean_layers)
+    # rast() only applies list names when there is more than one layer
+    names(mean_stack) <- names(mean_layers)
     m <- zonal(mean_stack, zone, fun = "mean", na.rm = TRUE)
     a <- zonal(area, zone, fun = "sum",  na.rm = TRUE)
     
