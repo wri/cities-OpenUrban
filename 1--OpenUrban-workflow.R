@@ -17,28 +17,7 @@ Sys.setenv(
 # ---- source workflows ----
 source(here("2--OpenUrban-generation.R"))
 source(here("3--opportunity-layers.R"))
-
-# ---- allowed opportunity keys ----
-OPP_KEYS <- c("baseline__trees",
-              "baseline__cool-roofs",
-              "trees__all-plantable", 
-              "trees__all-pedestrian",
-              "cool-roofs__all-roofs",
-              "all")
-
-parse_opportunity_keys <- function(x) {
-  if (is.null(x) || is.na(x) || !nzchar(x)) return(character(0))
-  keys <- unlist(str_split(x, "\\s*,\\s*"))
-  keys <- keys[nzchar(keys)]
-  bad <- setdiff(keys, OPP_KEYS)
-  if (length(bad) > 0) {
-    stop(glue(
-      "Unknown --opportunity key(s): {paste(bad, collapse = ', ')}.\n",
-      "Allowed: {paste(OPP_KEYS, collapse = ', ')}"
-    ), call. = FALSE)
-  }
-  unique(keys)
-}
+source(here("utils", "opportunity-keys.R"))
 
 parse_cities <- function(x) {
   # allow comma-separated list OR repeated whitespace accidentally
