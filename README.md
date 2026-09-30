@@ -209,7 +209,7 @@ Rscript 1--OpenUrban-workflow.R \
 | `baseline__trees` | Baseline tree cover |
 | `baseline__cool-roofs` | Baseline albedo |
 | `trees__all-plantable` | Achievable tree cover applied to all plantable surfaces |
-| `trees__all-pedestrian` | Achievable tree cover applied to street right-of-ways only |
+| `trees__pedestrian` | Achievable tree cover applied to street right-of-ways only |
 | `cool-roofs__all-roofs` | Cool roof opportunity applied to all buildings |
 | `all` | All scenarios |
 
@@ -233,6 +233,47 @@ Rscript 1--OpenUrban-workflow.R \
   --opportunity all
   --worldpop-version 1
 ```
+
+---
+
+## 🗺 Opportunity Layers for a Custom Boundary
+
+Use `4--opportunity-layers-aoi.R` to generate opportunity layers for any boundary (e.g. a city
+inside a larger urban extent). No published CIF layers are needed: the inputs are fetched with
+CIF for the boundary and saved alongside the outputs.
+
+```bash
+Rscript 4--opportunity-layers-aoi.R \
+  --city USA-Oakland \
+  --aoi-name city-limits \
+  --boundary path/to/oakland.geojson \
+  --opportunity all
+```
+
+- `--city` names the output folder; it does not need any existing data.
+- **OpenUrban must already exist for the area.** The script queries the OpenUrban GEE asset first
+  and stops (before downloading anything) if more than 1% of the boundary is not covered.
+  - If a single generated city covers the boundary, its tiles in `wri-cities-tcm` are read in place
+    (e.g. San Jose's tiles for Oakland). Otherwise OpenUrban is fetched from the GEE asset with CIF.
+    Override with `--lulc-source tcm|cif`.
+- Tree canopy height (>= 3 m), WorldPop (version 2 by default; `--worldpop-version`) and, for cool
+  roofs, albedo (`--albedo-start` / `--albedo-end`, default: CIF's previous-summer range) are fetched with CIF.
+- **Targets and the 5-class (CAT) layers are relative to the boundary**, so results differ from
+  (and are not directly comparable to) a citywide run.
+- Re-running skips inputs already fetched; `--skip-download` reuses the inputs in S3.
+
+Everything is written to `s3://wri-cities-tcm/OpenUrban/{city}/aoi/{aoi_name}/`:
+
+| Path | Contents |
+|------|----------|
+| `boundaries/aoi.geojson` | Dissolved boundary |
+| `inputs/manifest.json` | OpenUrban source, WorldPop version, albedo dates |
+| `inputs/tiles.geojson` | Tile grid with the path of each input tile |
+| `inputs/WorldPop/`, `inputs/TreeCanopyHeight/`, `inputs/AlbedoCloudMasked/`, `inputs/OpenUrban/` | Fetched inputs (`OpenUrban/` only when fetched from GEE) |
+| `opportunity-layers/` | Same files as the citywide run |
+
+> Requires a recent `city-metrix` (WorldPop version 2). Update the environment with:
+> `pip install -U --force-reinstall "city-metrix @ git+https://github.com/wri/cities-cif"`
 
 ---
 

@@ -269,7 +269,98 @@ auto_memfrac <- function() {
 
 
 # -------------------------
-# Main function
+# S3 helpers
+# -------------------------
+s3_object_exists <- function(file_path) {
+  s3_uri <- if (grepl("^s3://", file_path)) file_path else glue("s3://{file_path}")
+  p <- sub("^s3://", "", s3_uri)
+  bkt <- sub("/.*", "", p)
+  key <- sub("^[^/]+/", "", p)
+
+  ok <- tryCatch({
+    s3$head_object(Bucket = bkt, Key = key)
+    TRUE
+  }, error = function(e) FALSE)
+
+  isTRUE(ok)
+}
+
+# -------------------------
+# Write keys -> requested layers
+# -------------------------
+resolve_write_keys <- function(write_keys) {
+  write_keys <- str_to_lower(write_keys)
+
+  requested_all <- "all" %in% write_keys
+
+  request_tree_family <- requested_all || any(write_keys %in% c("tree", "trees"))
+  request_cool_family <- requested_all || any(write_keys %in% c("cool-roofs", "cool_roofs", "coolroof", "coolroofs"))
+  request_baseline_family <- requested_all || any(write_keys == "baseline")
+
+  request_tree_all_plantable <- requested_all ||
+    request_tree_family ||
+    any(write_keys %in% c(
+      "trees__all-plantable",
+      "opportunity__trees__all-plantable"
+    ))
+
+  request_tree_pedestrian <- requested_all ||
+    request_tree_family ||
+    any(write_keys %in% c(
+      "trees__pedestrian",
+      "opportunity__trees__pedestrian"
+    ))
+
+  request_tree_baseline <- requested_all ||
+    request_tree_family ||
+    request_baseline_family ||
+    any(write_keys %in% c("baseline__trees", "trees__baseline"))
+
+  request_cool_roof_opportunity <- requested_all ||
+    request_cool_family ||
+    any(write_keys %in% c(
+      "cool-roofs__all-roofs",
+      "opportunity__cool-roofs__all-roofs",
+      "cool_roofs__all_roofs"
+    ))
+
+  request_cool_roof_baseline <- requested_all ||
+    request_cool_family ||
+    request_baseline_family ||
+    any(write_keys %in% c(
+      "baseline__cool-roofs",
+      "cool-roofs__baseline",
+      "baseline__cool_roofs"
+    ))
+
+  request_tree_any_opportunity <- request_tree_all_plantable || request_tree_pedestrian
+
+  need_tree <- request_tree_any_opportunity || request_tree_baseline
+  need_cool <- request_cool_roof_opportunity || request_cool_roof_baseline
+
+  if (!need_tree && !need_cool) {
+    stop(
+      "No recognized write_keys requested. ",
+      "Use one or more of: all, tree/trees, cool-roofs, baseline, ",
+      "trees__all-plantable, trees__pedestrian, baseline__trees, ",
+      "cool-roofs__all-roofs, baseline__cool-roofs."
+    )
+  }
+
+  list(
+    request_tree_all_plantable = request_tree_all_plantable,
+    request_tree_pedestrian = request_tree_pedestrian,
+    request_tree_baseline = request_tree_baseline,
+    request_tree_any_opportunity = request_tree_any_opportunity,
+    request_cool_roof_opportunity = request_cool_roof_opportunity,
+    request_cool_roof_baseline = request_cool_roof_baseline,
+    need_tree = need_tree,
+    need_cool = need_cool
+  )
+}
+
+# -------------------------
+# Citywide entry point (CIF layers for the 2020 urban extent)
 # -------------------------
 run_city_opportunity <- function(
     city,
@@ -293,91 +384,27 @@ run_city_opportunity <- function(
     resume = TRUE,
     checkpoint_dir = NULL
 ) {
-  s3_object_exists <- function(file_path) {
-    s3_uri <- if (grepl("^s3://", file_path)) file_path else glue("s3://{file_path}")
-    p <- sub("^s3://", "", s3_uri)
-    bkt <- sub("/.*", "", p)
-    key <- sub("^[^/]+/", "", p)
-    
-    ok <- tryCatch({
-      s3$head_object(Bucket = bkt, Key = key)
-      TRUE
-    }, error = function(e) FALSE)
-    
-    isTRUE(ok)
+  if (!is.null(lulc_path) || !is.null(albedo_path) || !is.null(treeheight_path)) {
+    stop("lulc_path, albedo_path and treeheight_path overrides are not supported. ",
+         "Use 4--opportunity-layers-aoi.R for custom inputs.")
   }
-  
-  set_terra_options_auto(memfrac = auto_memfrac(), progress = 3)
-  write_keys <- str_to_lower(write_keys)
-  
-  requested_all <- "all" %in% write_keys
-  
-  request_tree_family <- requested_all || any(write_keys %in% c("tree", "trees"))
-  request_cool_family <- requested_all || any(write_keys %in% c("cool-roofs", "cool_roofs", "coolroof", "coolroofs"))
-  request_baseline_family <- requested_all || any(write_keys == "baseline")
-  
-  request_tree_all_plantable <- requested_all ||
-    request_tree_family ||
-    any(write_keys %in% c(
-      "trees__all-plantable",
-      "opportunity__trees__all-plantable"
-    ))
-  
-  request_tree_pedestrian <- requested_all ||
-    request_tree_family ||
-    any(write_keys %in% c(
-      "trees__pedestrian",
-      "opportunity__trees__pedestrian"
-    ))
-  
-  request_tree_baseline <- requested_all ||
-    request_tree_family ||
-    request_baseline_family ||
-    any(write_keys %in% c("baseline__trees", "trees__baseline"))
-  
-  request_cool_roof_opportunity <- requested_all ||
-    request_cool_family ||
-    any(write_keys %in% c(
-      "cool-roofs__all-roofs",
-      "opportunity__cool-roofs__all-roofs",
-      "cool_roofs__all_roofs"
-    ))
-  
-  request_cool_roof_baseline <- requested_all ||
-    request_cool_family ||
-    request_baseline_family ||
-    any(write_keys %in% c(
-      "baseline__cool-roofs",
-      "cool-roofs__baseline",
-      "baseline__cool_roofs"
-    ))
-  
-  request_tree_any_opportunity <- request_tree_all_plantable || request_tree_pedestrian
-  
-  need_tree <- request_tree_any_opportunity || request_tree_baseline
-  need_cool <- request_cool_roof_opportunity || request_cool_roof_baseline
-  
-  if (!need_tree && !need_cool) {
-    stop(
-      "No recognized write_keys requested. ",
-      "Use one or more of: all, tree/trees, cool-roofs, baseline, ",
-      "trees__all-plantable, trees__pedestrian, baseline__trees, ",
-      "cool-roofs__all-roofs, baseline__cool-roofs."
-    )
-  }
-  
+
+  keys <- resolve_write_keys(write_keys)
+  need_tree <- keys$need_tree
+  need_cool <- keys$need_cool
+
   cif_aws_http <- glue("https://{cif_bucket}.s3.us-east-1.amazonaws.com")
-  
+
   # -------- Paths (defaults) --------
   if (is.null(urban_extent_path)) {
     urban_extent_path <- glue(
       "{cif_aws_http}/{cif_prefix}/UrbanExtents/geojson/",
       "{city}__urban_extent__UrbanExtents__StartYear_2020_EndYear_2020.geojson"
     )
-    
-    urban_extent <- st_read(urban_extent_path, quiet = TRUE) %>% 
-      vect()
   }
+  urban_extent <- st_read(urban_extent_path, quiet = TRUE) %>%
+    vect()
+
   if (is.null(worldpop_path)) {
     if (worldpop_version == 2) {
       worldpop_path <- glue(
@@ -391,33 +418,40 @@ run_city_opportunity <- function(
       )
     }
   }
-  if (is.null(lulc_path)) {
-    lulc_grid <- st_read(glue(
-      "{cif_aws_http}/{cif_prefix}/OpenUrban/tif/",
-      "{city}__urban_extent__OpenUrban.tif/fishnet_grid.json"
-    )) %>% st_filter(st_as_sf(urban_extent))
-    
-    lulc_tiles <- list_tiles(glue("s3://wri-cities-indicators/{cif_prefix}/OpenUrban/tif/",
-                                  "{city}__urban_extent__OpenUrban.tif/"))
-    
-    lulc_tiles <- lulc_tiles[which(str_remove(lulc_tiles, ".tif") %in% lulc_grid$tile_name)]
 
-    lulc_paths <- glue(
-      "{cif_aws_http}/{cif_prefix}/OpenUrban/tif/",
-      "{city}__urban_extent__OpenUrban.tif/{lulc_tiles}"
-    )
-    
-    if (length(lulc_tiles) != nrow(lulc_grid)) {
-      stop(glue("Missing OpenUrban tiles in ", 
-                "s3://wri-cities-indicators/{cif_prefix}/OpenUrban/tif/",
-                 "{city}__urban_extent__OpenUrban.tif/"))
-    }
+  lulc_grid <- st_read(glue(
+    "{cif_aws_http}/{cif_prefix}/OpenUrban/tif/",
+    "{city}__urban_extent__OpenUrban.tif/fishnet_grid.json"
+  )) %>% st_filter(st_as_sf(urban_extent))
+
+  lulc_tiles <- list_tiles(glue("s3://wri-cities-indicators/{cif_prefix}/OpenUrban/tif/",
+                                "{city}__urban_extent__OpenUrban.tif/"))
+
+  lulc_tiles <- lulc_tiles[which(str_remove(lulc_tiles, ".tif") %in% lulc_grid$tile_name)]
+
+  lulc_paths <- glue(
+    "{cif_aws_http}/{cif_prefix}/OpenUrban/tif/",
+    "{city}__urban_extent__OpenUrban.tif/{lulc_tiles}"
+  )
+
+  if (length(lulc_tiles) != nrow(lulc_grid)) {
+    stop(glue("Missing OpenUrban tiles in ",
+              "s3://wri-cities-indicators/{cif_prefix}/OpenUrban/tif/",
+              "{city}__urban_extent__OpenUrban.tif/"))
   }
 
-  if (need_cool && is.null(albedo_path)) {
-    
+  tiles <- lulc_grid |>
+    select(tile_name) |>
+    mutate(
+      lulc_path = as.character(lulc_paths[match(tile_name, str_remove(lulc_tiles, ".tif"))]),
+      tree_path = NA_character_,
+      albedo_path = NA_character_
+    )
+
+  if (need_cool) {
+
     s3_parent <- glue("s3://wri-cities-indicators/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median__NumSeasons_3/tif/")
-    
+
     folder_name <- find_city_dataset_folder(
       s3_parent = s3_parent,
       city = city,
@@ -425,107 +459,178 @@ run_city_opportunity <- function(
       profile = "cities-data-dev"
     )
     # folder_name <- "IDN-Jakarta__urban_extent__AlbedoCloudMasked__ZonalStats_median__NumSeasons_3__StartYear_None_EndYear_None.tif"
-    
+
     # Now list tiles inside the discovered folder
     albedo_tiles <- list_tiles(glue("{s3_parent}{folder_name}/"), profile = "cities-data-dev")
     albedo_tiles <- albedo_tiles[which(str_remove(albedo_tiles, ".tif") %in% str_remove(lulc_tiles, ".tif"))]
-    
+
     albedo_paths <- glue(
       "{cif_aws_http}/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median__NumSeasons_3/tif/",
       "{folder_name}/{albedo_tiles}"
     )
-    
+
     if (length(albedo_tiles) != nrow(lulc_grid)) {
-      stop(glue("Missing albedo tiles in ", 
+      stop(glue("Missing albedo tiles in ",
                 "s3://wri-cities-indicators/{cif_prefix}/AlbedoCloudMasked__ZonalStats_median__NumSeasons_3",
                 "/tif/{folder_name}"))
     }
 
+    tiles$albedo_path <- as.character(albedo_paths[match(tiles$tile_name, str_remove(albedo_tiles, ".tif"))])
   }
-  
-  if (need_tree && is.null(treeheight_path)) {
+
+  if (need_tree) {
     tree_tiles <- list_tiles(glue("s3://wri-cities-indicators/{cif_prefix}/TreeCanopyHeight/tif/",
                                   "{city}__urban_extent__TreeCanopyHeight__Height_3.tif/"))
-    
+
     tree_tiles <- tree_tiles[which(str_remove(tree_tiles, ".tif") %in% str_remove(lulc_tiles, ".tif"))]
-    
+
     treeheight_paths <- glue(
       "{cif_aws_http}/{cif_prefix}/TreeCanopyHeight/tif/",
       "{city}__urban_extent__TreeCanopyHeight__Height_3.tif/{tree_tiles}"
     )
-    
+
     if (length(tree_tiles) != nrow(lulc_grid)) {
-      stop(glue("Missing tree canopy tiles in ", 
+      stop(glue("Missing tree canopy tiles in ",
                 "s3://wri-cities-indicators/{cif_prefix}/TreeCanopyHeight/tif/",
                 "{city}__urban_extent__TreeCanopyHeight__Height_3.tif/"))
     }
 
+    tiles$tree_path <- as.character(treeheight_paths[match(tiles$tile_name, str_remove(tree_tiles, ".tif"))])
   }
-  
+
+  compute_opportunity(
+    city = city,
+    boundary = st_as_sf(urban_extent),
+    wp_path = worldpop_path,
+    tiles = tiles,
+    write_keys = write_keys,
+    out_prefix = glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers"),
+    checkpoint_dir = checkpoint_dir,
+    cool_roof_target_low = cool_roof_target_low,
+    cool_roof_target_high = cool_roof_target_high,
+    save_full_grid = save_full_grid,
+    resume = resume
+  )
+}
+
+# -------------------------
+# Shared calculation
+# -------------------------
+# boundary: sf polygon(s); WorldPop cells are masked to it and targets are computed
+#           from the cells inside it
+# wp_path:  WorldPop raster; outputs match its grid exactly
+# tiles:    sf of tile polygons with tile_name, lulc_path, tree_path, albedo_path
+# out_prefix: "bucket/key/prefix" that output files are written under
+compute_opportunity <- function(
+    city,
+    boundary,
+    wp_path,
+    tiles,
+    write_keys,
+    out_prefix,
+    checkpoint_dir = NULL,
+    cool_roof_target_low = 0.62,
+    cool_roof_target_high = 0.28,
+    save_full_grid = TRUE,
+    resume = TRUE,
+    crop_to_boundary = FALSE
+) {
+  set_terra_options_auto(memfrac = auto_memfrac(), progress = 3)
+
+  keys <- resolve_write_keys(write_keys)
+  request_tree_all_plantable <- keys$request_tree_all_plantable
+  request_tree_pedestrian <- keys$request_tree_pedestrian
+  request_tree_baseline <- keys$request_tree_baseline
+  request_tree_any_opportunity <- keys$request_tree_any_opportunity
+  request_cool_roof_opportunity <- keys$request_cool_roof_opportunity
+  request_cool_roof_baseline <- keys$request_cool_roof_baseline
+  need_tree <- keys$need_tree
+  need_cool <- keys$need_cool
+
   # -------- Load data --------
-  
+
   # -------- WorldPop grid --------
   print("Processing worldpop ...")
   # Create a 100m WorldPop grid as polygons, give each cell a stable gid
-  wp <- rast(worldpop_path)
+  wp <- rast(wp_path)
+  boundary_v <- project(vect(boundary), crs(wp))
+  if (isTRUE(crop_to_boundary)) {
+    wp <- crop(wp, boundary_v, snap = "out")
+  }
   wp[is.na(wp)] <- 1
-  wp <- wp %>% mask(urban_extent)
-  wp_cells <- as.polygons(wp, values = FALSE, na.rm = TRUE, aggregate = FALSE) 
+  wp <- wp %>% mask(boundary_v)
+  wp_cells <- as.polygons(wp, values = FALSE, na.rm = TRUE, aggregate = FALSE)
   wp_cells$gid <- seq_len(nrow(wp_cells))
-  
+
   wp_cells <- st_as_sf(wp_cells)
-  
+  tiles <- st_transform(tiles, st_crs(wp_cells))
+
   # Batch the zonal statistics to avoid loading the entire raster
   tile_grid <- wp_cells %>%
-    st_join(lulc_grid %>% select(tile_name), join = st_intersects, left = TRUE) %>% 
+    st_join(tiles %>% select(tile_name), join = st_intersects, left = TRUE) %>%
     st_drop_geometry()
-  
-  wp_cells <- wp_cells %>% 
+
+  wp_cells <- wp_cells %>%
     full_join(tile_grid)
-  
+
   # Divide wp_cells into batches
   process_batch <- function(id) {
-    
+
     on.exit({
       try(terra::tmpFiles(remove = TRUE), silent = TRUE)
       gc()
     }, add = TRUE)
-    
+
     print(glue("Processing batch for {id}"))
-    
-    wp_cells_batch <- wp_cells %>% 
+
+    wp_cells_batch <- wp_cells %>%
       filter(tile_name == id)
-    
+
     bb <- st_as_sf(st_as_sfc(st_bbox(wp_cells_batch)))
-    
-    tile <- lulc_grid |> 
+
+    # Crop in the raster's own CRS (inputs need not share the WorldPop CRS)
+    crop_to_bb <- function(r) {
+      crop(r, vect(st_transform(bb, st_crs(terra::crs(r)))))
+    }
+
+    tile <- tiles |>
       filter(tile_name == id)
-    
-    idx_touch <- st_touches(lulc_grid, tile, sparse = FALSE)[, 1]
-    
-    tiles_touching <- lulc_grid %>%
-      filter(tile_name == id | idx_touch) |> 
-      st_filter(bb) |> 
-      pull(tile_name)
-    
+
+    idx_touch <- st_intersects(tiles, tile, sparse = FALSE)[, 1]
+
+    batch_tiles <- tiles %>%
+      filter(tile_name == id | idx_touch) |>
+      st_filter(bb)
+
     # Load data
     print("Loading rasters...")
-    lulc    <- load_and_merge(str_subset(lulc_paths, str_c(tiles_touching, collapse = "|"))) |> 
-      crop(bb)
-    
+    lulc    <- load_and_merge(batch_tiles$lulc_path) |>
+      crop_to_bb()
+
     if (need_cool) {
-      alb <- load_and_merge(str_subset(albedo_paths, str_c(tiles_touching, collapse = "|"))) |>
-        crop(bb)
-      alb <- resample(alb, lulc, method = "bilinear")
+      alb <- load_and_merge(batch_tiles$albedo_path) |>
+        crop_to_bb()
+      if (same.crs(alb, lulc)) {
+        alb <- resample(alb, lulc, method = "bilinear")
+      } else {
+        alb <- project(alb, lulc, method = "bilinear")
+      }
     }
-    
+
     if (need_tree) {
-      tree_h <- load_and_merge(str_subset(treeheight_paths, str_c(tiles_touching, collapse = "|"))) |>
-        crop(bb)
+      tree_h <- load_and_merge(batch_tiles$tree_path) |>
+        crop_to_bb()
+      if (!compareGeom(tree_h, lulc, stopOnError = FALSE)) {
+        if (same.crs(tree_h, lulc)) {
+          tree_h <- resample(tree_h, lulc, method = "near")
+        } else {
+          tree_h <- project(tree_h, lulc, method = "near")
+        }
+      }
       tree <- as.numeric(!is.na(tree_h))
     }
-    
-    # Reproject the *vector* grid into the LULC CRS 
+
+    # Reproject the *vector* grid into the LULC CRS
     wp_cells_lulc_batch <- st_transform(wp_cells_batch, st_crs(lulc))
     
     # Rasterize gid onto the LULC grid (zone id only)
@@ -798,7 +903,7 @@ run_city_opportunity <- function(
   # -------- Burn back to rasters that match WorldPop EXACTLY --------
   wp_cells <- wp_cells |> 
     left_join(gid_stats, by = "gid")
-  stats_out_path <- glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity__stats.parquet")
+  stats_out_path <- glue("{out_prefix}/opportunity__stats.parquet")
   
   if (isTRUE(save_full_grid)) {
     missing_joined_cols <- setdiff(names(gid_stats), names(wp_cells))
@@ -823,13 +928,13 @@ run_city_opportunity <- function(
     
     write_s3(
       tree_opportunity,
-      glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity__trees__all-plantable.tif")
+      glue("{out_prefix}/opportunity__trees__all-plantable.tif")
     )
     
     tree_opportunity_cat <- normalize_percentile(tree_opportunity) %>% cat5_from_01()
     write_s3(
       tree_opportunity_cat,
-      glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity-CAT__trees__all-plantable.tif")
+      glue("{out_prefix}/opportunity-CAT__trees__all-plantable.tif")
     )
     
     outputs$tree_opportunity <- tree_opportunity
@@ -841,7 +946,7 @@ run_city_opportunity <- function(
     
     write_s3(
       street_tree_opportunity,
-      glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity__trees__pedestrian.tif")
+      glue("{out_prefix}/opportunity__trees__pedestrian.tif")
     )
     
     outputs$street_tree_opportunity <- street_tree_opportunity
@@ -853,7 +958,7 @@ run_city_opportunity <- function(
     
     write_s3(
       tree_baseline,
-      glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/baseline__trees.tif")
+      glue("{out_prefix}/baseline__trees.tif")
     )
     
     outputs$tree_baseline <- tree_baseline
@@ -866,13 +971,13 @@ run_city_opportunity <- function(
     
     write_s3(
       cool_roof_opportunity,
-      glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity__cool-roofs__all-roofs.tif")
+      glue("{out_prefix}/opportunity__cool-roofs__all-roofs.tif")
     )
     
     cool_roof_opportunity_cat <- normalize_percentile(cool_roof_opportunity) %>% cat5_from_01()
     write_s3(
       cool_roof_opportunity_cat,
-      glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity-CAT__cool-roofs__all-roofs.tif")
+      glue("{out_prefix}/opportunity-CAT__cool-roofs__all-roofs.tif")
     )
     
     outputs$cool_roof_opportunity <- cool_roof_opportunity
@@ -884,7 +989,7 @@ run_city_opportunity <- function(
     
     write_s3(
       cool_roof_baseline,
-      glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/baseline__cool-roofs.tif")
+      glue("{out_prefix}/baseline__cool-roofs.tif")
     )
     
     outputs$cool_roof_baseline <- cool_roof_baseline
