@@ -829,7 +829,7 @@ run_city_opportunity <- function(
     tree_opportunity_cat <- normalize_percentile(tree_opportunity) %>% cat5_from_01()
     write_s3(
       tree_opportunity_cat,
-      glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity-CAT__trees__all-plantable__.tif")
+      glue("wri-cities-tcm/OpenUrban/{city}/opportunity-layers/opportunity-CAT__trees__all-plantable.tif")
     )
     
     outputs$tree_opportunity <- tree_opportunity
