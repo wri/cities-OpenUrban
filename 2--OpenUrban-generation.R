@@ -179,12 +179,21 @@ create_lulc_tile <- function(
   buildings <- sfarrow::st_read_parquet(
     glue("{city_path}/buildings/buildings_{gridcell_id}.parquet"),
     quiet = TRUE
-  ) %>%
-    select(id, release_version)
-  
-  ovt_release_version <- unique(buildings$release_version)
-    
-  
+  )
+
+  # Overture release recorded at download. Empty tiles have no rows to read it from,
+  # and files downloaded before it was tracked have no column; the GEE property is
+  # then left unset.
+  ovt_release_version <- if ("release_version" %in% names(buildings)) {
+    sort(unique(na.omit(as.character(buildings$release_version))))
+  } else {
+    character(0)
+  }
+  ovt_release_version <- ovt_release_version[nzchar(ovt_release_version)]
+
+  buildings <- buildings %>%
+    select(id)
+
   ulu <- rast(glue("{city_path}/urban_land_use/urban_land_use_{gridcell_id}.tif"))
   
   # Build reclassification matrix (ULU → building codes)
@@ -397,7 +406,9 @@ create_lulc_tile <- function(
       "--city-name", city,
       "--gridcell-id", gridcell_id,
       "--version", version,
-      "--overture-release-version", ovt_release_version,
+      if (length(ovt_release_version) > 0) {
+        c("--overture-release-version", paste(ovt_release_version, collapse = ","))
+      },
       "--overwrite"
     )
     

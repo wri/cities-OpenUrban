@@ -7,6 +7,8 @@ from enum import Enum
 import glob
 import urllib.request
 import json
+import re
+import functools
 
 from city_metrix.layers import (
     OpenStreetMap, 
@@ -270,14 +272,34 @@ def get_parking(city, bbox, grid_cell_id, data_path, copy_to_s3=False, compressi
     if copy_to_s3:
         to_s3(parking_file, data_path)
         
+@functools.lru_cache(maxsize=1)
 def get_latest_overture_version():
+    """Latest Overture release (e.g. '2026-09-23.1').
+
+    OvertureBuildings uses the overturemaps CLI without a pinned release, so the
+    latest release at download time is the one the buildings come from.
+    Cached so each process queries the catalog once.
+    """
     url = "https://stac.overturemaps.org/catalog.json"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req) as response:
+    with urllib.request.urlopen(req, timeout=30) as response:
         catalog = json.loads(response.read())
-    # Links are sorted by release date; get the latest
-    release_links = [l["href"] for l in catalog["links"] if l["rel"] == "child"]
-    return release_links[0].split("/")[1] 
+
+    if catalog.get("latest"):
+        return catalog["latest"]
+
+    # Fallback: highest release in the child links, e.g.
+    # https://stac.overturemaps.org/2026-09-23.1/catalog.json
+    versions = [
+        m.group(1)
+        for l in catalog.get("links", [])
+        if l.get("rel") == "child"
+        for m in [re.search(r"(\d{4}-\d{2}-\d{2}\.\d+)", l.get("href", ""))]
+        if m
+    ]
+    if not versions:
+        raise ValueError(f"Could not determine latest Overture release from {url}")
+    return max(versions, key=lambda v: (v.split(".")[0], int(v.split(".")[1])))
 
 def get_buildings(city, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False, compression="snappy"):
     """Fetch Overture buildings → GeoParquet."""
@@ -296,7 +318,6 @@ def get_buildings(city, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False, c
         if gdf is None or len(gdf) == 0:
             print(f"No buildings found for grid cell {grid_cell_id}")
             gdf = gpd.GeoDataFrame(columns=["id","geometry"], geometry="geometry", crs="EPSG:4326")
-            gdf["release_version"] = get_latest_overture_version()
 
         # Ensure an id column exists
         if "id" not in gdf.columns:

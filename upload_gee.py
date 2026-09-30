@@ -239,9 +239,10 @@ def main(
         "city": str(city_name),
         "grid_cell": int(gridcell_id) if str(gridcell_id).isdigit() else str(gridcell_id),
         "version": str(version),
-        "overture_release_version": str(overture_release_version),
         "start_time": time.strftime("%Y-%m-%d"),
     }
+    if overture_release_version:
+        properties["overture_release_version"] = str(overture_release_version)
 
     # Stage to GCS (either from local or from S3)
     if using_local:
