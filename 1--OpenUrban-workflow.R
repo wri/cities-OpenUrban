@@ -80,6 +80,8 @@ option_list <- list(
               help = "Comma-separated opportunity layers: trees__all-trees,cool-roofs__all-roofs"),
   make_option(c("--boundary"), type = "character", default = NULL,
               help = "URL to a custom boundary GeoJSON (overrides the default urban-extent fetch). e.g. 'https://.../.../boundary.geojson'"),
+  make_option(c("--worldpop-version"), type = "integer", default = 2,
+              help = "WorldPop version to use (default: 2)"),
   make_option(c("--fail-fast"), action = "store_true", default = FALSE,
               help = "Stop immediately if any city fails (default: keep going)")
 )
@@ -152,7 +154,8 @@ for (city in cities) {
       message("==> Running opportunity workflow...")
       run_city_opportunity(
         city = city,
-        write_keys = opp_keys
+        write_keys = opp_keys,
+        worldpop_version = opt$`worldpop-version`
       )
       message("==> Opportunity layers complete.")
     }

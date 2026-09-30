@@ -1,4 +1,6 @@
 import os
+import time
+import random
 import numpy as np
 import pandas as pd
 import geopandas as gpd
@@ -9,6 +11,138 @@ import urllib.request
 import json
 import re
 import functools
+
+# ---------------------------------------------------------------------------
+# Robustness helpers
+# ---------------------------------------------------------------------------
+# Number of attempts and backoff timing for any remote fetch. Override from the
+# environment without touching code, e.g. OPENURBAN_MAX_RETRIES=10.
+_MAX_RETRIES  = int(os.environ.get("OPENURBAN_MAX_RETRIES", "6"))
+_RETRY_BASE_S = float(os.environ.get("OPENURBAN_RETRY_BASE_S", "5"))
+_RETRY_CAP_S  = float(os.environ.get("OPENURBAN_RETRY_CAP_S", "180"))
+
+
+def _retry(fn, what, tries=_MAX_RETRIES, base=_RETRY_BASE_S, cap=_RETRY_CAP_S,
+           before_attempt=None):
+    """Call ``fn()`` and retry on any exception with exponential backoff + jitter.
+
+    ``before_attempt(attempt)`` (1-based) runs just before each try -- used to
+    rotate to a different server between attempts.
+
+    Re-raises the last exception (wrapped) once all attempts are exhausted so the
+    caller can decide whether to skip this item and carry on.
+    """
+    last = None
+    for attempt in range(1, tries + 1):
+        try:
+            if before_attempt is not None:
+                before_attempt(attempt)
+            return fn()
+        except KeyboardInterrupt:
+            raise
+        except Exception as e:  # network / IO / server errors vary widely
+            last = e
+            if attempt == tries:
+                break
+            delay = min(cap, base * (2 ** (attempt - 1)))
+            delay += random.uniform(0, delay * 0.25)  # jitter
+            print(
+                f"  [retry] {what}: attempt {attempt}/{tries} failed "
+                f"({type(e).__name__}: {e}); retrying in {delay:.0f}s",
+                flush=True,
+            )
+            time.sleep(delay)
+    raise RuntimeError(f"{what}: giving up after {tries} attempts") from last
+
+
+# ---------------------------------------------------------------------------
+# Overpass endpoint(s)
+# ---------------------------------------------------------------------------
+# osmnx (used by city_metrix's OpenStreetMap layer) talks to a single Overpass
+# endpoint at a time. Each retry attempt rotates to the next endpoint in this
+# list, so if overpass-api.de is having a moment the fetch fails over to the
+# other well-established public instances (and cycles back). Override the list /
+# order for a given run with OPENURBAN_OVERPASS_MIRRORS (comma-separated, first
+# tried first, each ending in "/api").
+_OVERPASS_MIRRORS = [
+    m.strip().rstrip("/")
+    for m in os.environ.get(
+        "OPENURBAN_OVERPASS_MIRRORS",
+        ",".join([
+            "https://overpass-api.de/api",       # primary
+            "https://overpass.kumi.systems/api", # fallback
+            "https://overpass.osm.ch/api",       # fallback (Swiss OSM chapter)
+        ]),
+    ).split(",")
+    if m.strip()
+]
+
+
+# Per-request timeout (seconds). osmnx uses this both as the HTTP read timeout
+# and as the Overpass server-side budget "[timeout:<N>]" in the query. Default
+# matches osmnx's own default (180). Override with OPENURBAN_OSM_TIMEOUT_S.
+# MUST be an int: Overpass rejects a non-integer "[timeout:...]" with a 400.
+_OSM_TIMEOUT_S = int(float(os.environ.get("OPENURBAN_OSM_TIMEOUT_S", "180")))
+
+
+def _use_overpass_mirror(attempt):
+    """Point osmnx at the next Overpass mirror (round-robin by attempt number)."""
+    if not _OVERPASS_MIRRORS:
+        return
+    url = _OVERPASS_MIRRORS[(attempt - 1) % len(_OVERPASS_MIRRORS)]
+    try:
+        import osmnx as ox
+        # osmnx >= 2 uses settings.overpass_url; older uses overpass_endpoint
+        if hasattr(ox.settings, "overpass_url"):
+            ox.settings.overpass_url = url
+        else:
+            ox.settings.overpass_endpoint = url
+        # Don't let a slow/queueing mirror hang forever.
+        try:
+            ox.settings.requests_timeout = _OSM_TIMEOUT_S
+        except Exception:
+            pass
+        print(f"  [overpass] attempt {attempt} using {url} (timeout {_OSM_TIMEOUT_S}s)", flush=True)
+    except Exception as e:
+        print(f"  [overpass] could not set mirror ({e}); using osmnx default", flush=True)
+
+
+def _osm_fetch(osm_class, bbox, what):
+    """Retry an OpenStreetMap layer fetch, rotating Overpass mirrors each attempt."""
+    return _retry(
+        lambda: OpenStreetMap(osm_class=osm_class).get_data(bbox),
+        what,
+        before_attempt=_use_overpass_mirror,
+    )
+
+
+def _output_ready(path, min_bytes=1):
+    """True if ``path`` exists and is non-empty.
+
+    Non-empty check guards against zero-byte / truncated files left behind by a
+    process that was killed mid-write; those get re-fetched instead of skipped.
+    """
+    try:
+        return os.path.isfile(path) and os.path.getsize(path) >= min_bytes
+    except OSError:
+        return False
+
+
+def _write_raster_atomic(darr, path):
+    """Write an (rio)xarray raster to ``path`` via a temp file + atomic rename.
+
+    A crash mid-write leaves only the temp file behind, so ``_output_ready``
+    will not mistake a half-written file for a finished one. The temp file keeps
+    the real extension (``esa_1.tmp.tif``) so GDAL can still detect the driver.
+    """
+    root, ext = os.path.splitext(path)
+    tmp = f"{root}.tmp{ext or '.tif'}"
+    try:
+        darr.rio.to_raster(raster_path=tmp)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
 
 from city_metrix.layers import (
     OpenStreetMap, 
@@ -134,7 +268,7 @@ def get_city_polygon(city, data_path, copy_to_s3=False, crs='EPSG:4326', boundar
     boundaries_path = f'{data_path}/{city}/boundaries'
     boundaries_file = f'{boundaries_path}/city_polygon.geojson'
 
-    if os.path.exists(boundaries_file):
+    if _output_ready(boundaries_file):
         print(f"City polygon already exists at {boundaries_file}, skipping fetch.")
         city_gdf = gpd.read_file(boundaries_file).to_crs(crs)
     else:
@@ -146,7 +280,9 @@ def get_city_polygon(city, data_path, copy_to_s3=False, crs='EPSG:4326', boundar
             f'{city}__urban_extent__UrbanExtents__StartYear_2020_EndYear_2020.geojson'
         )
         print(f"Fetching city polygon for {city} from {fetch_url}...")
-        city_gdf = gpd.read_file(fetch_url).to_crs(crs)
+        city_gdf = _retry(
+            lambda: gpd.read_file(fetch_url), f"city polygon {city}"
+        ).to_crs(crs)
 
         # Keep just the geometry column
         city_gdf = city_gdf[['geometry']]
@@ -165,12 +301,12 @@ def get_roads(city, bbox, grid_cell_id, data_path, copy_to_s3=False, compression
     roads_file = f"{roads_path}/roads_{grid_cell_id}.parquet"
     os.makedirs(roads_path, exist_ok=True)
 
-    if os.path.exists(roads_file):
+    if _output_ready(roads_file):
         print(f"Roads data already exists at {roads_file}, skipping fetch.")
         return
 
     print(f"Fetching roads data for {city}...")
-    roads = OpenStreetMap(osm_class=OpenStreetMapClass.ROAD).get_data(bbox)
+    roads = _osm_fetch(OpenStreetMapClass.ROAD, bbox, f"OSM roads {city}/{grid_cell_id}")
     roads = keep_only(roads, allowed=("LineString", "MultiLineString"))
 
     # ensure geometry column is set
@@ -211,12 +347,14 @@ def get_open_space(city, bbox, grid_cell_id, data_path, copy_to_s3=False, compre
     open_space_file = f"{open_space_path}/open_space_{grid_cell_id}.parquet"
     os.makedirs(open_space_path, exist_ok=True)
 
-    if os.path.exists(open_space_file):
+    if _output_ready(open_space_file):
         print(f"Open space data already exists at {open_space_file}, skipping fetch.")
         return
 
     print(f"Fetching open space data for {city}...")
-    open_space = OpenStreetMap(osm_class=OpenStreetMapClass.OPEN_SPACE_HEAT).get_data(bbox)
+    open_space = _osm_fetch(
+        OpenStreetMapClass.OPEN_SPACE_HEAT, bbox, f"OSM open_space {city}/{grid_cell_id}"
+    )
     open_space = keep_only(open_space, allowed=("Polygon", "MultiPolygon"))
 
     if open_space is None or open_space.empty:
@@ -234,12 +372,12 @@ def get_water(city, bbox, grid_cell_id, data_path, copy_to_s3=False, compression
     water_file = f"{water_path}/water_{grid_cell_id}.parquet"
     os.makedirs(water_path, exist_ok=True)
 
-    if os.path.exists(water_file):
+    if _output_ready(water_file):
         print(f"Water data already exists at {water_file}, skipping fetch.")
         return
 
     print(f"Fetching water data for {city}...")
-    water = OpenStreetMap(osm_class=OpenStreetMapClass.WATER).get_data(bbox)
+    water = _osm_fetch(OpenStreetMapClass.WATER, bbox, f"OSM water {city}/{grid_cell_id}")
     water = keep_only(water, allowed=("Polygon", "MultiPolygon"))
 
     if water is None or water.empty:
@@ -257,12 +395,12 @@ def get_parking(city, bbox, grid_cell_id, data_path, copy_to_s3=False, compressi
     parking_file = f"{parking_path}/parking_{grid_cell_id}.parquet"
     os.makedirs(parking_path, exist_ok=True)
 
-    if os.path.exists(parking_file):
+    if _output_ready(parking_file):
         print(f"Parking data already exists at {parking_file}, skipping fetch.")
         return
 
     print(f"Fetching parking data for {city}...")
-    parking = OpenStreetMap(osm_class=OpenStreetMapClass.PARKING).get_data(bbox)
+    parking = _osm_fetch(OpenStreetMapClass.PARKING, bbox, f"OSM parking {city}/{grid_cell_id}")
     parking = keep_only(parking, allowed=("Polygon", "MultiPolygon"))
 
     if parking is None or parking.empty:
@@ -307,40 +445,37 @@ def get_buildings(city, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False, c
     buildings_file = f"{buildings_path}/buildings_{grid_cell_id}.parquet"
     os.makedirs(buildings_path, exist_ok=True)
 
-    if os.path.exists(buildings_file):
+    if _output_ready(buildings_file):
         print(f"Buildings data already exists at {buildings_file}, skipping fetch.")
         return
 
     print(f"Fetching buildings data for {city} (cell {grid_cell_id})...")
-    try:
-        gdf = OvertureBuildings().get_data(bbox_fetch)
+    # Retry transient fetch failures. If every attempt fails this raises, and the
+    # caller records the cell as failed -- we deliberately do NOT write a fake
+    # empty tile, because that would be silently skipped on the next run.
+    gdf = _retry(
+        lambda: OvertureBuildings().get_data(bbox_fetch),
+        f"Overture buildings {city}/{grid_cell_id}",
+    )
 
-        if gdf is None or len(gdf) == 0:
-            print(f"No buildings found for grid cell {grid_cell_id}")
-            gdf = gpd.GeoDataFrame(columns=["id","geometry"], geometry="geometry", crs="EPSG:4326")
+    if gdf is None or len(gdf) == 0:
+        print(f"No buildings found for grid cell {grid_cell_id}")
+        gdf = gpd.GeoDataFrame(columns=["id", "geometry"], geometry="geometry", crs="EPSG:4326")
 
-        # Ensure an id column exists
-        if "id" not in gdf.columns:
-            if "building_id" in gdf.columns:
-                gdf = gdf.rename(columns={"building_id": "id"})
-            else:
-                gdf = gdf.reset_index().rename(columns={"index": "id"})
-        gdf["id"] = gdf["id"].astype(str)
-        gdf["release_version"] = get_latest_overture_version()
+    # Ensure an id column exists
+    if "id" not in gdf.columns:
+        if "building_id" in gdf.columns:
+            gdf = gdf.rename(columns={"building_id": "id"})
+        else:
+            gdf = gdf.reset_index().rename(columns={"index": "id"})
+    gdf["id"] = gdf["id"].astype(str)
+    gdf["release_version"] = _retry(get_latest_overture_version, "Overture release version")
 
-        gdf.to_parquet(buildings_file, index=False, compression=compression)
-        print(f"Wrote {len(gdf)} features → {buildings_file}")
+    gdf.to_parquet(buildings_file, index=False, compression=compression)
+    print(f"Wrote {len(gdf)} features → {buildings_file}")
 
-        if copy_to_s3:
-            to_s3(buildings_file, data_path)
-
-    except (OSError, ConnectionError, TimeoutError, Exception) as e:
-        print(f"Error fetching buildings for cell {grid_cell_id}: {e}")
-        gdf = gpd.GeoDataFrame(columns=["id","geometry"], geometry="geometry", crs="EPSG:4326")
-        gdf.to_parquet(buildings_file, index=False, compression=compression)
-        print(f"Wrote EMPTY tile → {buildings_file}")
-        if copy_to_s3:
-            to_s3(buildings_file, data_path)
+    if copy_to_s3:
+        to_s3(buildings_file, data_path)
 
             
 def merge_building_tiles(city, data_path, copy_to_s3=False, compression="snappy"):
@@ -404,18 +539,21 @@ def get_urban_land_use(city, bbox_fetch, grid_cell_id, data_path, copy_to_s3=Fal
     urban_land_use_file = f'{urban_land_use_path}/urban_land_use_{grid_cell_id}.tif'
 
     # If the urban land use file already exists, skip fetching
-    if os.path.exists(urban_land_use_file):
+    if _output_ready(urban_land_use_file):
         print(f"Urban land use data already exists at {urban_land_use_file}, skipping fetch.")
     else:
         print(f"Fetching urban land use data for {city}...")
-        urban_land_use = UrbanLandUse().get_data(bbox_fetch)
+        urban_land_use = _retry(
+            lambda: UrbanLandUse().get_data(bbox_fetch),
+            f"UrbanLandUse {city}/{grid_cell_id}",
+        )
         
         # Create urban land use folder if it doesn't exist
         if not os.path.exists(urban_land_use_path):
             os.makedirs(urban_land_use_path)
 
         # Write raster to tif file
-        urban_land_use.rio.to_raster(raster_path=urban_land_use_file)
+        _write_raster_atomic(urban_land_use, urban_land_use_file)
         print("save ok")
 
         if copy_to_s3:
@@ -438,21 +576,27 @@ def get_esa(city, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False):
     esa_file = f'{esa_path}/esa_{grid_cell_id}.tif'
 
     # If the ESA file already exists, skip fetching
-    if os.path.exists(esa_file):
+    if _output_ready(esa_file):
         print(f"ESA data already exists at {esa_file}, skipping fetch.")
     else:
         print(f"Fetching ESA LULC data for {city}...")
         # Check if all pixels are water (value 80 in ESA WorldCover)
         # If so, skip this tile
-        esa = EsaWorldCover().get_data(bbox_fetch, spatial_resolution=10)
+        esa = _retry(
+            lambda: EsaWorldCover().get_data(bbox_fetch, spatial_resolution=10),
+            f"ESA WorldCover 10m {city}/{grid_cell_id}",
+        )
 
-        esa = EsaWorldCover().get_data(bbox_fetch, spatial_resolution=1)
+        esa = _retry(
+            lambda: EsaWorldCover().get_data(bbox_fetch, spatial_resolution=1),
+            f"ESA WorldCover 1m {city}/{grid_cell_id}",
+        )
 
         if not os.path.exists(esa_path):
             os.makedirs(esa_path)
 
         # Write raster to tif file
-        esa.rio.to_raster(raster_path=esa_file)
+        _write_raster_atomic(esa, esa_file)
 
         if copy_to_s3:
             to_s3(esa_file, data_path)
@@ -473,18 +617,21 @@ def get_anbh(city, bbox_fetch, grid_cell_id, data_path, copy_to_s3=False):
     anbh_file = f'{anbh_path}/anbh_{grid_cell_id}.tif'
 
     # If the ANBH file already exists, skip fetching
-    if os.path.exists(anbh_file):
+    if _output_ready(anbh_file):
         print(f"ANBH data already exists at {anbh_file}, skipping fetch.")
     else:
         print(f"Fetching ANBH data for {city}...")
-        anbh = AverageNetBuildingHeight().get_data(bbox_fetch)
+        anbh = _retry(
+            lambda: AverageNetBuildingHeight().get_data(bbox_fetch),
+            f"AverageNetBuildingHeight {city}/{grid_cell_id}",
+        )
 
         # Create urban land use folder if it doesn't exist
         if not os.path.exists(anbh_path):
             os.makedirs(anbh_path)
 
         # Write raster to tif file
-        anbh.rio.to_raster(raster_path=anbh_file)
+        _write_raster_atomic(anbh, anbh_file)
 
         if copy_to_s3:
             to_s3(anbh_file, data_path)
