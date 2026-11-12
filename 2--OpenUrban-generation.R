@@ -432,7 +432,13 @@ generate_openurban_city <- function(city, download_data = TRUE, generate_tiles =
       "-n","open-urban",
       py,"-u","get_data.py", city
     )
-    run_python_live(args, wd = here())
+    status <- run_python_live(args, wd = here())
+    if (!identical(as.integer(status), 0L)) {
+      # Stop before building tiles from missing/empty inputs (e.g. no roads ->
+      # everything classed as built-up). Local data is kept for the re-run.
+      stop(glue("get_data.py failed for {city} (exit status {status}); ",
+                "see the DATA DOWNLOAD FINISHED WITH ... FAILURE(S) summary above."))
+    }
   } else {
     message("Skipping data download (--openurban mode without d).")
   }

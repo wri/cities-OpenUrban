@@ -59,7 +59,8 @@ run_python_live <- function(args,
   
   txt <- safe_read()
   if (nzchar(txt)) cat(txt)
-  
+
+  p$wait()
   invisible(p$get_exit_status())
 }
 

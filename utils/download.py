@@ -65,9 +65,11 @@ _OVERPASS_MIRRORS = [
     for m in os.environ.get(
         "OPENURBAN_OVERPASS_MIRRORS",
         ",".join([
-            "https://overpass-api.de/api",       # primary
-            "https://overpass.kumi.systems/api", # fallback
-            "https://overpass.osm.ch/api",       # fallback (Swiss OSM chapter)
+            "https://overpass-api.de/api",          # primary
+            "https://overpass.private.coffee/api",  # fallback (global data)
+            "https://overpass.kumi.systems/api",    # fallback
+            # NOTE: do NOT add overpass.osm.ch -- it only holds Swiss data, so
+            # for any other city it "succeeds" with zero features.
         ]),
     ).split(",")
     if m.strip()
@@ -79,6 +81,14 @@ _OVERPASS_MIRRORS = [
 # matches osmnx's own default (180). Override with OPENURBAN_OSM_TIMEOUT_S.
 # MUST be an int: Overpass rejects a non-integer "[timeout:...]" with a 400.
 _OSM_TIMEOUT_S = int(float(os.environ.get("OPENURBAN_OSM_TIMEOUT_S", "180")))
+
+# User-Agent sent to Overpass. overpass-api.de answers osmnx's default
+# User-Agent with "406 Not Acceptable", so identify the pipeline explicitly.
+# Override with OPENURBAN_HTTP_USER_AGENT.
+_HTTP_USER_AGENT = os.environ.get(
+    "OPENURBAN_HTTP_USER_AGENT",
+    "OpenUrban-pipeline/1.0 (+https://github.com/wri/cities-OpenUrban)",
+)
 
 
 def _use_overpass_mirror(attempt):
@@ -98,18 +108,29 @@ def _use_overpass_mirror(attempt):
             ox.settings.requests_timeout = _OSM_TIMEOUT_S
         except Exception:
             pass
+        try:
+            ox.settings.http_user_agent = _HTTP_USER_AGENT
+        except Exception:
+            pass
         print(f"  [overpass] attempt {attempt} using {url} (timeout {_OSM_TIMEOUT_S}s)", flush=True)
     except Exception as e:
         print(f"  [overpass] could not set mirror ({e}); using osmnx default", flush=True)
 
 
-def _osm_fetch(osm_class, bbox, what):
-    """Retry an OpenStreetMap layer fetch, rotating Overpass mirrors each attempt."""
-    return _retry(
-        lambda: OpenStreetMap(osm_class=osm_class).get_data(bbox),
-        what,
-        before_attempt=_use_overpass_mirror,
-    )
+def _osm_fetch(osm_class, bbox, what, require_nonempty=False):
+    """Retry an OpenStreetMap layer fetch, rotating Overpass mirrors each attempt.
+
+    With ``require_nonempty`` an empty result counts as a failed attempt (so the
+    next mirror is tried) instead of being written out as an empty file. Use it
+    for layers that can never legitimately be empty for a whole city (roads).
+    """
+    def _fetch():
+        gdf = OpenStreetMap(osm_class=osm_class).get_data(bbox)
+        if require_nonempty and (gdf is None or len(gdf) == 0):
+            raise ValueError(f"{what}: Overpass returned 0 features")
+        return gdf
+
+    return _retry(_fetch, what, before_attempt=_use_overpass_mirror)
 
 
 def _output_ready(path, min_bytes=1):
@@ -301,12 +322,15 @@ def get_roads(city, bbox, grid_cell_id, data_path, copy_to_s3=False, compression
         return
 
     print(f"Fetching roads data for {city}...")
-    roads = _osm_fetch(OpenStreetMapClass.ROAD, bbox, f"OSM roads {city}/{grid_cell_id}")
+    roads = _osm_fetch(OpenStreetMapClass.ROAD, bbox, f"OSM roads {city}/{grid_cell_id}",
+                       require_nonempty=True)
     roads = keep_only(roads, allowed=("LineString", "MultiLineString"))
 
-    # ensure geometry column is set
+    # A whole city with no road lines means the download went wrong. Raise rather
+    # than write an empty file, which later runs would skip as "already exists".
     if roads is None or roads.empty:
-        roads = gpd.GeoDataFrame(columns=["geometry"], geometry="geometry", crs="EPSG:4326")
+        raise ValueError(f"OSM roads {city}/{grid_cell_id}: no LineString roads returned")
+    print(f"  roads: {len(roads)} features", flush=True)
 
     roads.to_parquet(roads_file, index=False, compression=compression)
     if copy_to_s3:
